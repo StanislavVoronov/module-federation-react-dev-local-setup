@@ -30,6 +30,30 @@ body {
   font-size: 14px;
 }
 
+.host__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.host__nav-link {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 7px 12px;
+  color: #374151;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  background: #fff;
+}
+
+.host__nav-link--active {
+  border-color: #2563eb;
+  color: #fff;
+  background: #2563eb;
+}
+
 .host__status {
   color: #6b7280;
 }

@@ -1,71 +1,107 @@
-import { QueryClientProvider, useQuery } from '@tanstack/react-query';
-import { queryClient, REMOTES_QUERY_KEY } from './queryClient';
+import { Navigate, NavLink, useRoutes } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { MfRemoteHardcoded } from './remotes/MfRemoteHardcoded';
 import { RemoteModule } from './remotes/RemoteModule';
-import { fetchRemotes, renderable } from './remotes/registry';
+import { fetchRemotes } from './remotes/registry';
+import type { RemoteDescriptor } from './remotes/registry';
+import './index.css';
 
-function RemoteList() {
-  // Тот же ключ, что и в точке входа: данные уже лежат в кэше, повторного
-  // запроса не будет.
-  const { data, error, isPending, refetch } = useQuery({
-    queryKey: REMOTES_QUERY_KEY,
-    queryFn: fetchRemotes,
-  });
+const MF_REMOTE_1: RemoteDescriptor = {
+  name: 'mf_remote_1',
+  entry: '/mf-remote-1/mf-manifest.json',
+  module: 'Widget',
+  title: 'mf-remote-1',
+};
 
-  if (isPending) {
-    return <p className="host__status">Запрашиваю список remote…</p>;
-  }
+function DynamicWeather() {
+  const [remote, setRemote] = useState<RemoteDescriptor | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    void fetchRemotes()
+      .then((remotes) => {
+        const weather = remotes.find(({ name }) => name === 'mf_remote_2');
+
+        if (!weather) {
+          throw new Error('mf_remote_2 отсутствует в /api/remotes');
+        }
+
+        if (active) {
+          setRemote(weather);
+        }
+      })
+      .catch((nextError: unknown) => {
+        if (active) {
+          setError(
+            nextError instanceof Error ? nextError : new Error(String(nextError)),
+          );
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   if (error) {
-    return (
-      <div className="host__error">
-        <strong>Не удалось получить список remote.</strong>
-        <pre>{error.message}</pre>
-        <button className="host__retry" type="button" onClick={() => refetch()}>
-          Повторить
-        </button>
-      </div>
-    );
+    return <p className="host__status">{error.message}</p>;
   }
 
-  // Показываем только те, что приложение рисует само. Остальные из реестра
-  // нужны ради регистрации и прогрева — их рендерит кто-то другой.
-  const visible = renderable(data);
-
-  if (visible.length === 0) {
-    return <p className="host__status">Сервер не отдал ни одного remote.</p>;
+  if (!remote) {
+    return <p className="host__status">Загружаю Weather…</p>;
   }
 
-  return (
-    <>
-      <p className="host__subtitle">
-        Доступные remote: {data.map((remote) => remote.name).join(', ')}
-      </p>
+  return <RemoteModule remote={remote} />;
+}
 
-      {visible.map((remote) => (
-        <RemoteModule key={remote.name} remote={remote} />
-      ))}
-    </>
-  );
+function navLinkClassName({ isActive }: { isActive: boolean }) {
+  return isActive
+    ? 'host__nav-link host__nav-link--active'
+    : 'host__nav-link';
 }
 
 export function App() {
+  const routes = useRoutes([
+    {
+      path: '/',
+      element: <Navigate to="/mf-remote" replace />,
+    },
+    {
+      path: '/hardcoded',
+      element: <Navigate to="/mf-remote" replace />,
+    },
+    {
+      path: '/mf-remote',
+      element: <MfRemoteHardcoded />,
+    },
+    {
+      path: '/mf-remote-1',
+      element: <RemoteModule remote={MF_REMOTE_1} />,
+    },
+    {
+      path: '/weather',
+      element: <DynamicWeather />,
+    },
+  ]);
+
   return (
-    <QueryClientProvider client={queryClient}>
-      <main className="host">
-        <header className="host__header">
-          <h1 className="host__title">mf-host</h1>
-          <p className="host__subtitle">
-            Module Federation 2.0 · Rsbuild · React · TanStack Query
-          </p>
-        </header>
+    <main className="host">
+      <nav className="host__nav">
+        <NavLink className={navLinkClassName} to="/mf-remote">
+          mf-remote
+        </NavLink>
+        <NavLink className={navLinkClassName} to="/mf-remote-1">
+          mf-remote-1
+        </NavLink>
+        <NavLink className={navLinkClassName} to="/weather">
+          Weather
+        </NavLink>
+      </nav>
 
-        {/* Зашит в код: реестра не ждёт, рисуется сразу. */}
-        <MfRemoteHardcoded />
-
-        <RemoteList />
-      </main>
-    </QueryClientProvider>
+      {routes}
+    </main>
   );
 }
 

@@ -9,7 +9,10 @@ export default defineConfig({
     pluginReact(),
     pluginModuleFederation({
       name: 'mf_host',
-      remotes: {},
+      remotes: {
+        mf_main: 'mf_main@/mf-main/mf-manifest.json',
+        mf_remote_2: 'mf_remote_2@/mf-remote-2/mf-manifest.json',
+      },
       // React root живёт в host, поэтому host становится владельцем
       // singleton'а для React и ReactDOM.
       shared: {
@@ -17,6 +20,8 @@ export default defineConfig({
         'react/': { singleton: true, requiredVersion: false },
         'react-dom': { singleton: true, requiredVersion: false },
         'react-dom/': { singleton: true, requiredVersion: false },
+        'react-router': { singleton: true, requiredVersion: false },
+        'react-router-dom': { singleton: true, requiredVersion: false },
       },
       dts: false,
     }),
