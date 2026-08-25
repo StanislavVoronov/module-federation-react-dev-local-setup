@@ -13,10 +13,6 @@ export default defineConfig({
     pluginReact(),
     pluginModuleFederation({
       name: 'mf_main',
-      remotes: {
-        mf_remote: 'mf_remote@/mf-remote/mf-manifest.json',
-        mf_remote_1: 'mf_remote_1@/mf-remote-1/mf-manifest.json',
-      },
       exposes: {
         // mf-main отдаёт только React-компонент приложения. createRoot живёт
         // в host/bus, которые предварительно регистрируют контейнеры.

@@ -1,9 +1,7 @@
 import { Navigate, NavLink, useRoutes } from 'react-router-dom';
-import { useEffect, useState } from 'react';
 import { MfRemoteHardcoded } from './remotes/MfRemoteHardcoded';
 import { RemoteModule } from './remotes/RemoteModule';
-import { fetchRemotes } from './remotes/registry';
-import type { RemoteDescriptor } from './remotes/registry';
+import type { RemoteDescriptor } from './remotes/RemoteModule';
 import './index.css';
 
 const MF_REMOTE_1: RemoteDescriptor = {
@@ -13,48 +11,12 @@ const MF_REMOTE_1: RemoteDescriptor = {
   title: 'mf-remote-1',
 };
 
-function DynamicWeather() {
-  const [remote, setRemote] = useState<RemoteDescriptor | null>(null);
-  const [error, setError] = useState<Error | null>(null);
-
-  useEffect(() => {
-    let active = true;
-
-    void fetchRemotes()
-      .then((remotes) => {
-        const weather = remotes.find(({ name }) => name === 'mf_remote_2');
-
-        if (!weather) {
-          throw new Error('mf_remote_2 отсутствует в /api/remotes');
-        }
-
-        if (active) {
-          setRemote(weather);
-        }
-      })
-      .catch((nextError: unknown) => {
-        if (active) {
-          setError(
-            nextError instanceof Error ? nextError : new Error(String(nextError)),
-          );
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  if (error) {
-    return <p className="host__status">{error.message}</p>;
-  }
-
-  if (!remote) {
-    return <p className="host__status">Загружаю Weather…</p>;
-  }
-
-  return <RemoteModule remote={remote} />;
-}
+const MF_REMOTE_2: RemoteDescriptor = {
+  name: 'mf_remote_2',
+  entry: '/mf-remote-2/mf-manifest.json',
+  module: 'Weather',
+  title: 'Погода',
+};
 
 function navLinkClassName({ isActive }: { isActive: boolean }) {
   return isActive
@@ -82,7 +44,7 @@ export function App() {
     },
     {
       path: '/weather',
-      element: <DynamicWeather />,
+      element: <RemoteModule remote={MF_REMOTE_2} />,
     },
   ]);
 

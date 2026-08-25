@@ -9,8 +9,17 @@ export default defineConfig({
     pluginReact(),
     pluginModuleFederation({
       name: 'mf_host',
+      // Оболочка объявляет все контейнеры страницы, хотя статических импортов
+      // вида `mf_remote/App` в коде нет: mf-main регистрирует их рантаймом
+      // через registerRemotes/loadRemote. Декларация нужна ради HMR — без неё
+      // контейнер непрозрачен для компиляции, апдейт из remote доезжает и
+      // модуль переисполняется, но перерисовать его в дереве уже некому, и
+      // правка перестаёт быть видна без перезагрузки. Проверено A/B на
+      // mf_remote и mf_remote_1: убрать отсюда — HMR у обоих отваливается.
       remotes: {
         mf_main: 'mf_main@/mf-main/mf-manifest.json',
+        mf_remote: 'mf_remote@/mf-remote/mf-manifest.json',
+        mf_remote_1: 'mf_remote_1@/mf-remote-1/mf-manifest.json',
         mf_remote_2: 'mf_remote_2@/mf-remote-2/mf-manifest.json',
       },
       // React root живёт в host, поэтому host становится владельцем
