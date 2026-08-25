@@ -31,12 +31,12 @@ export const REMOTES: RemoteConfig[] = [
     prefix: '/mf-main',
     // Без target: приложение раздаётся собранным, из mf-bus/public/mf-main.
     // Чтобы вернуться к живой правке mf-main, верните сюда
-    // target: 'http://localhost:5006' и поднимите его dev-сервер.
+    // target: 'http://localhost:7006' и поднимите его dev-сервер.
   },
   {
     name: 'mf_remote',
     prefix: '/mf-remote',
-    target: 'http://localhost:5001',
+    target: 'http://localhost:7001',
     module: 'App',
     title: 'mf-remote',
     // Рендерит его не список mf-main, а зашитый в код MfRemoteHardcoded.
@@ -46,7 +46,7 @@ export const REMOTES: RemoteConfig[] = [
   {
     name: 'mf_remote_1',
     prefix: '/mf-remote-1',
-    target: 'http://localhost:5004',
+    target: 'http://localhost:7004',
     module: 'Widget',
     title: 'mf-remote-1',
     render: false,
@@ -54,7 +54,7 @@ export const REMOTES: RemoteConfig[] = [
   {
     name: 'mf_remote_2',
     prefix: '/mf-remote-2',
-    target: 'http://localhost:5005',
+    target: 'http://localhost:7005',
     module: 'Weather',
     title: 'Погода',
   },

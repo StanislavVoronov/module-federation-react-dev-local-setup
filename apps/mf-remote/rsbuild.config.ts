@@ -2,7 +2,7 @@ import { defineConfig } from '@rsbuild/core';
 import { pluginReact } from '@rsbuild/plugin-react';
 import { pluginModuleFederation } from '@module-federation/rsbuild-plugin';
 
-const PORT = 5001;
+const PORT = 7001;
 
 // Базовый путь, под которым этот remote виден потребителю. Абсолютного адреса
 // нет нигде: и dev-сервер mf-host, и mf-bus проксируют /mf-remote/ сюда,

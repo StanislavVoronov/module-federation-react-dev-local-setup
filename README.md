@@ -5,12 +5,12 @@ Module Federation 2.0 + Rsbuild + React. Монорепа на npm workspaces и
 
 | Пакет | Что это | Порт |
 | --- | --- | --- |
-| `apps/mf-remote` | Remote со счётчиком; сам подключает `mf-remote-1` | 5001 |
-| `apps/mf-host` | Отдельная host-оболочка для запуска через dev-сервер | 5002 |
-| `apps/mf-bus` | Оболочка: bootstrap, stubs, прокси и раздача собранных remote | 5003 |
-| `apps/mf-remote-1` | Remote-виджет, его рендерит `mf-remote` | 5004 |
-| `apps/mf-remote-2` | Remote с TanStack Query и прогнозом погоды по 10 городам | 5005 |
-| `apps/mf-main` | Само приложение как remote-компонент, UI реестра, react-query | 5006 |
+| `apps/mf-remote` | Remote со счётчиком; сам подключает `mf-remote-1` | 7001 |
+| `apps/mf-host` | Отдельная host-оболочка для запуска через dev-сервер | 7002 |
+| `apps/mf-bus` | Оболочка: bootstrap, stubs, прокси и раздача собранных remote | 7003 |
+| `apps/mf-remote-1` | Remote-виджет, его рендерит `mf-remote` | 7004 |
+| `apps/mf-remote-2` | Remote с TanStack Query и прогнозом погоды по 10 городам | 7005 |
+| `apps/mf-main` | Само приложение как remote-компонент, UI реестра, react-query | 7006 |
 
 Порты зашиты в конфиги, `strictPort: true` — молча съехать на соседний нельзя.
 
@@ -51,18 +51,18 @@ npm run dev          # turbo run dev: все шесть пакетов разо�
 npm run dev -w mf-main   # или поштучно, любой пакет по имени
 ```
 
-Чтобы `mf-main` действительно поднимался с 5006, верните ему `target`
+Чтобы `mf-main` действительно поднимался с 7006, верните ему `target`
 в [mf-bus/src/remotes.ts](apps/mf-bus/src/remotes.ts) — по умолчанию он раздаётся
 собранным (сценарий 1b).
 
-Открыть <http://localhost:5003>. Dev-сервер `mf-host` при этом не нужен.
+Открыть <http://localhost:7003>. Dev-сервер `mf-host` при этом не нужен.
 
 ## Сценарий 1b: собранный mf-main через mf-bus
 
 `mf-main` можно не держать процессом. Он собирается прямо в статику оболочки —
 `mf-bus/public/mf-main` (`output.distPath` в
 [mf-main/rsbuild.config.ts](apps/mf-main/rsbuild.config.ts)), — и `mf-bus` раздаёт
-контейнер оттуда: `server.publicDir` отдаёт папку с корня, а прокси на 5006
+контейнер оттуда: `server.publicDir` отдаёт папку с корня, а прокси на 7006
 в конфиге просто не появляется.
 
 ```bash
@@ -101,7 +101,7 @@ dev-серверы и от режима `mf-main` не зависят. А вот
 
 ## Сценарий 2: с dev-сервером хоста
 
-Всё то же самое плюс `npm run dev -w mf-host` на 5002 — пригодится, если
+Всё то же самое плюс `npm run dev -w mf-host` на 7002 — пригодится, если
 правится сама оболочка.
 
 ## Монорепа
@@ -273,7 +273,7 @@ const module = await loadRemote(`${NAME}/App`);
 ### HMR-сокеты идут напрямую на dev-серверы remote
 
 Через прокси ходят только HTTP-запросы. Сокет HMR браузер открывает прямо на
-`ws://localhost:5001/rsbuild-hmr` и далее: `dev.client.port` конфигом пустым
+`ws://localhost:7001/rsbuild-hmr` и далее: `dev.client.port` конфигом пустым
 не оставить — rsbuild подставляет туда порт собственного dev-сервера.
 WebSocket не ограничен CORS, поэтому это работает.
 

@@ -2,7 +2,7 @@ import { defineConfig } from '@rsbuild/core';
 import { pluginReact } from '@rsbuild/plugin-react';
 import { pluginModuleFederation } from '@module-federation/rsbuild-plugin';
 
-const PORT = 5006;
+const PORT = 7006;
 
 // Базовый путь, под которым этот remote виден потребителю.
 // Абсолютного адреса нет: /mf-main/ проксируется сюда.
@@ -62,7 +62,7 @@ export default defineConfig({
     assetPrefix: `${BASE}/`,
     // Собранный контейнер кладём прямо в статику mf-bus. Оттуда же оболочка
     // забирает mf-manifest.json для инициализации mf_main, поэтому копировать
-    // сборку куда-то ещё не нужно, а dev-сервер на 5006 становится
+    // сборку куда-то ещё не нужно, а dev-сервер на 7006 становится
     // необязательным: путь /mf-main/ в браузере не меняется.
     distPath: {
       root: `../mf-bus/public${BASE}`,

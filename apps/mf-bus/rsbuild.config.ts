@@ -3,7 +3,7 @@ import { pluginReact } from '@rsbuild/plugin-react';
 import { pluginModuleFederation } from '@module-federation/rsbuild-plugin';
 import { REMOTES, STUBS } from './src/remotes.ts';
 
-const PORT = 5003;
+const PORT = 7003;
 
 // Папка со статикой. Сюда собираются контейнеры: mf-main пишет себя
 // в public/mf-main (output.distPath в его конфиге), и оболочка забирает

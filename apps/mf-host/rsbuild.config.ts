@@ -2,7 +2,7 @@ import { defineConfig } from '@rsbuild/core';
 import { pluginReact } from '@rsbuild/plugin-react';
 import { pluginModuleFederation } from '@module-federation/rsbuild-plugin';
 
-const PORT = 5002;
+const PORT = 7002;
 
 export default defineConfig({
   plugins: [
@@ -50,11 +50,11 @@ export default defineConfig({
     // Пути не переписываем: remote сами живут под своим server.base.
     proxy: {
       // Нужен не bootstrap host, а приложению mf-main после рендера.
-      '/api/': { target: 'http://localhost:5003', changeOrigin: true },
-      '/mf-main/': { target: 'http://localhost:5006', ws: true },
-      '/mf-remote/': { target: 'http://localhost:5001', ws: true },
-      '/mf-remote-1/': { target: 'http://localhost:5004', ws: true },
-      '/mf-remote-2/': { target: 'http://localhost:5005', ws: true },
+      '/api/': { target: 'http://localhost:7003', changeOrigin: true },
+      '/mf-main/': { target: 'http://localhost:7006', ws: true },
+      '/mf-remote/': { target: 'http://localhost:7001', ws: true },
+      '/mf-remote-1/': { target: 'http://localhost:7004', ws: true },
+      '/mf-remote-2/': { target: 'http://localhost:7005', ws: true },
     },
   },
 
