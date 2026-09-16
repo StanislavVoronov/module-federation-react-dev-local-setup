@@ -1,4 +1,10 @@
-import { Navigate, NavLink, useRoutes } from 'react-router-dom';
+import {
+  createBrowserRouter,
+  Navigate,
+  NavLink,
+  Outlet,
+  RouterProvider,
+} from 'react-router-dom';
 import { MfRemoteHardcoded } from './remotes/MfRemoteHardcoded';
 import { RemoteModule } from './remotes/RemoteModule';
 import type { RemoteDescriptor } from './remotes/RemoteModule';
@@ -24,30 +30,7 @@ function navLinkClassName({ isActive }: { isActive: boolean }) {
     : 'host__nav-link';
 }
 
-export function App() {
-  const routes = useRoutes([
-    {
-      path: '/',
-      element: <Navigate to="/mf-remote" replace />,
-    },
-    {
-      path: '/hardcoded',
-      element: <Navigate to="/mf-remote" replace />,
-    },
-    {
-      path: '/mf-remote',
-      element: <MfRemoteHardcoded />,
-    },
-    {
-      path: '/mf-remote-1',
-      element: <RemoteModule remote={MF_REMOTE_1} />,
-    },
-    {
-      path: '/weather',
-      element: <RemoteModule remote={MF_REMOTE_2} />,
-    },
-  ]);
-
+function AppLayout() {
   return (
     <main className="host">
       <nav className="host__nav">
@@ -62,9 +45,46 @@ export function App() {
         </NavLink>
       </nav>
 
-      {routes}
+      <Outlet />
     </main>
   );
+}
+
+const router = createBrowserRouter([
+  {
+    path: '/',
+    element: <AppLayout />,
+    children: [
+      {
+        index: true,
+        element: <Navigate to="/mf-remote" replace />,
+      },
+      {
+        path: 'hardcoded',
+        element: <Navigate to="/mf-remote" replace />,
+      },
+      {
+        path: 'mf-remote',
+        element: <MfRemoteHardcoded />,
+      },
+      {
+        path: 'mf-remote-1',
+        element: <RemoteModule remote={MF_REMOTE_1} />,
+      },
+      {
+        path: 'weather',
+        element: <RemoteModule remote={MF_REMOTE_2} />,
+      },
+      {
+        path: '*',
+        element: null,
+      },
+    ],
+  },
+]);
+
+export function App() {
+  return <RouterProvider router={router} />;
 }
 
 export default App;

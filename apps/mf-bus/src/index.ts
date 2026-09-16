@@ -33,6 +33,8 @@ async function fetchStubs(): Promise<RemoteDescriptor[]> {
 
 async function start() {
   const stubs = await fetchStubs();
+  const React = await import('react');
+  const ReactDOM = await import('react-dom/client');
 
   registerRemotes(
     [MAIN_REMOTE, ...stubs].map(({ name, entry }) => ({ name, entry })),
@@ -43,9 +45,6 @@ async function start() {
   if (!main) {
     throw new Error(`${MAIN_REMOTE.name} не найден`);
   }
-
-  const React = await import('react');
-  const ReactDOM = await import('react-dom/client');
 
   const container = document.getElementById('root');
 

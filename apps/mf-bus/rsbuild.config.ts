@@ -30,12 +30,16 @@ export default defineConfig({
     pluginReact(),
     pluginModuleFederation({
       name: 'mf_bus',
-      remotes: {},
+      remotes: {
+        mf_remote: 'mf_remote@/mf-remote/mf-manifest.json',
+      },
       shared: {
         react: { singleton: true, requiredVersion: false },
         'react/': { singleton: true, requiredVersion: false },
         'react-dom': { singleton: true, requiredVersion: false },
         'react-dom/': { singleton: true, requiredVersion: false },
+        'react-router': { singleton: true, requiredVersion: false },
+        'react-router-dom': { singleton: true, requiredVersion: false },
       },
       dts: false,
     }),
