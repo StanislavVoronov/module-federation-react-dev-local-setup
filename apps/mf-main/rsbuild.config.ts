@@ -18,13 +18,9 @@ export default defineConfig({
         // в host/bus, которые предварительно регистрируют контейнеры.
         '.': './src/App.tsx',
       },
-      // Слэш в конце даёт префиксный шеринг (react/jsx-runtime,
-      // react-dom/client).
       shared: {
         react: { singleton: true, requiredVersion: false },
-        'react/': { singleton: true, requiredVersion: false },
         'react-dom': { singleton: true, requiredVersion: false },
-        'react-dom/': { singleton: true, requiredVersion: false },
         'react-router': { singleton: true, requiredVersion: false },
         'react-router-dom': { singleton: true, requiredVersion: false },
       },

@@ -19,14 +19,9 @@ export default defineConfig({
       exposes: {
         './App': './src/App.tsx',
       },
-      // Слэш в конце — префиксный шеринг: под общий singleton попадают
-      // и react/jsx-runtime, и react-dom/client. Без него remote утащит
-      // свою копию внутренностей React и сломает хуки.
       shared: {
         react: { singleton: true, requiredVersion: false },
-        'react/': { singleton: true, requiredVersion: false },
         'react-dom': { singleton: true, requiredVersion: false },
-        'react-dom/': { singleton: true, requiredVersion: false },
       },
       // Типы отдаём через обычный .d.ts в хосте, генератор типов не нужен.
       dts: false,
