@@ -10,7 +10,7 @@ export default function App() {
       <h2 className="remote-app__title">mf-remote</h2>
       <p className="remote-app__hint">
         Отредактируй <code>mf-remote/src/App.tsx</code> — счётчик не сбросится,
-        если HMR отработал.
+        если HMR отработал. stas111
       </p>
       <button
         className="remote-app__button"

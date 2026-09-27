@@ -6,7 +6,7 @@
     "dev": {
       "cache": false,
       "persistent": true,
-      "dependsOn": ["mf-main#build:dev"]
+      "dependsOn": ["mf-main#build"]
     },
     "build": {
       "outputs": ["dist/**", "../mf-bus/public/**"]

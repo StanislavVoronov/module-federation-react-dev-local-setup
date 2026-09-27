@@ -66,12 +66,12 @@ npm run dev -w mf-main   # или поштучно, любой пакет по �
 в конфиге просто не появляется.
 
 ```bash
-npx turbo run build:dev --filter=mf-main   # именно build:dev, см. ниже
+npx turbo run build --filter=mf-main       # production-сборка
 npm run dev -w mf-bus                      # dev-сервер mf-main не нужен
 ```
 
 Собирать вручную обычно не приходится: `dev` в [turbo.json](turbo.json) объявлен
-через `dependsOn: ["mf-main#build:dev"]`, поэтому `npm run dev` сам собирает
+через `dependsOn: ["mf-main#build"]`, поэтому `npm run dev` сам собирает
 `mf-main` в статику оболочки до старта серверов.
 
 Это и есть текущая раскладка по умолчанию: у `mf_main` в реестре нет `target`.
@@ -90,9 +90,9 @@ npm run dev -w mf-bus                      # dev-сервер mf-main не ну�
 `public`, поэтому объявленный `target` всегда перебивает собранную папку —
 «собрано, значит из папки» само не получится.
 
-`build:dev`, а не `build`: оболочка в dev-режиме собирается в development,
-и её `react-dom` не сойдётся с production-копией React из `mf-main` — см. раздел
-про ограничение.
+`mf-main` собирается в production, но не поставляет собственные React и
+ReactDOM: для них задано `shared.import: false`. Он получает singleton из
+оболочки, чей development ReactDOM поддерживает Fast Refresh remote.
 
 HMR remote при этом продолжает работать: их сокеты идут напрямую на их
 dev-серверы и от режима `mf-main` не зависят. А вот сам `mf-main` из папки,
@@ -114,7 +114,7 @@ Workspaces описаны в корневом [package.json](package.json) ка�
 по одному на контейнер.
 
 ```jsonc
-"dev":       { "cache": false, "persistent": true, "dependsOn": ["mf-main#build:dev"] },
+"dev":       { "cache": false, "persistent": true, "dependsOn": ["mf-main#build"] },
 "build":     { "outputs": ["dist/**", "../mf-bus/public/**"] },
 "build:dev": { "outputs": ["dist/**", "../mf-bus/public/**"] }
 ```
@@ -129,12 +129,8 @@ Workspaces описаны в корневом [package.json](package.json) ка�
 `FULL TURBO` и файлы на месте). Но rsbuild предупреждает, что не чистит dist вне
 корня пакета, так что старые чанки оттуда никто не удаляет.
 
-Три грабли, на которые стоит смотреть:
+Две особенности, на которые стоит смотреть:
 
-- **`npm run build` в корне ломает сценарий 1b.** Он гоняет `build` у всех, в том
-  числе production-сборку `mf-main` — та ложится в `apps/mf-bus/public/mf-main`
-  поверх dev-сборки, и оболочка перестаёт заводиться (см. раздел про ограничение).
-  Лечится `npx turbo run build:dev --filter=mf-main`.
 - **`envMode: strict` — дефолт turbo 2.** До задачи долетают только переменные,
   перечисленные в `env`/`globalEnv`/`passThroughEnv`. Если адреса remote или
   `assetPrefix` придут из окружения, они молча окажутся пустыми, а кэш их
@@ -313,33 +309,22 @@ TanStack Query подключается в UI
 `@tanstack/react-query` в `shared` не входит: `mf-remote-2` приносит его с
 собой вместе со своим `QueryClient` и не рассчитывает, что провайдер даст хост.
 
-## Ограничение: dev-remote требует dev-сборки хоста
+## Production mf-main и HMR remote
 
-Fast Refresh работает только с development-сборкой `react-dom`, а её на страницу
-поставляет `mf-bus` как владелец singleton'а. Поэтому связка «production-сборка
-+ dev-сервер remote» не заводится: dev-код remote дёргает
-`react/jsx-dev-runtime`, несовместимый с production-внутренностями React
-(`dispatcher.getOwner is not a function`).
+Fast Refresh требует development ReactDOM. `mf-bus` запускается через
+`rsbuild dev` и поставляет React/ReactDOM. `mf-main` при этом может быть
+обычной минифицированной production-сборкой, которую bus раздаёт как статику.
 
-Правило простое: **режим должен быть одинаковым у всех, кто участвует в
-singleton'е React**. Смешивать development и production нельзя ни в какую
-сторону.
+В `mf-main` для `react` и `react-dom` задано `shared.import: false`:
+контейнер потребляет общие зависимости оболочки и не содержит production
+fallback. Без этого production-копии могут попасть в общий runtime: hot-update
+скачивается, но React-компонент не обновляется. Сам `mf-main` не монтируется
+автономно — оболочка обязана предоставить эти зависимости.
 
-`npm run dev` у `mf-bus` — это development-сборка оболочки, поэтому рядом
-с ней всё остальное тоже должно быть development:
-
-- remote — dev-серверами (обычный сценарий 1);
-- `mf-main` из папки — `npm run build:dev`, не `build`.
-
-Что бывает при рассинхроне, проверено на обеих комбинациях:
-
-| на странице | ошибка |
-| --- | --- |
-| dev remote + production React | `dispatcher.getOwner is not a function` |
-| dev `react-dom` (`mf-bus`) + production `react` (папка `mf-main`) | `Cannot read properties of undefined (reading 'current')` в `isConcurrentActEnvironment` |
-
-Поскольку у `mf-bus` production-режима нет вообще, второй половины правила
-здесь просто не бывает: на странице всё всегда development.
+Проверка HMR: открыть <http://localhost:7003>, увеличить `count`, изменить
+текст в `apps/mf-remote/src/App.tsx`. Текст должен обновиться без перезагрузки
+страницы и сброса счётчика. После изменения конфигурации sharing уже открытую
+страницу нужно один раз перезагрузить.
 
 ## Грабли: Module Federation ломается под tsx
 

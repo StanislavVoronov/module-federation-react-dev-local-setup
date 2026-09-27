@@ -19,8 +19,10 @@ export default defineConfig({
         '.': './src/App.tsx',
       },
       shared: {
-        react: { singleton: true, requiredVersion: false },
-        'react-dom': { singleton: true, requiredVersion: false },
+        // React принадлежит оболочке: production fallback из mf-main может
+        // подменить dev renderer и отключить Fast Refresh живых remote.
+        react: { singleton: true, requiredVersion: false, import: false },
+        'react-dom': { singleton: true, requiredVersion: false, import: false },
         'react-router': { singleton: true, requiredVersion: false },
         'react-router-dom': { singleton: true, requiredVersion: false },
       },
