@@ -31,8 +31,7 @@ type ErrorFallbackContext = DynamicModuleFallbackContext & {
   error: unknown;
   onRepeat: () => void;
   failTries: number;
-  loading: boolean;
-  attempts: number;
+  isLoading: boolean;
   support?: Support;
 };
 type Fallback<T extends object> = ReactNode | ((context: T) => ReactNode);
@@ -160,19 +159,14 @@ export function DynamicModule<T extends RemoteComponent>({
       remote={remote}
       onLoad={onLoad}
       support={support}
-      loading={fallbacks.loading}
-      fallback={fallbacks.error}
+      fallbacks={fallbacks}
     >
       {(Module) => typeof children === 'function' ? children(Module as unknown as T) : <Module />}
     </RemoteBoundary>
   );
 }
 
-type BoundaryProps = DynamicModuleFallbackContext & {
-  onLoad?: BaseProps['onLoad'];
-  support?: Support;
-  loading?: BaseProps['fallbacks']['loading'];
-  fallback: BaseProps['fallbacks']['error'];
+type BoundaryProps = BaseProps & {
   component?: ModuleComponent;
   children: (Module: ModuleComponent) => ReactNode;
 };
@@ -180,16 +174,15 @@ type BoundaryProps = DynamicModuleFallbackContext & {
 type BoundaryState = {
   error: unknown;
   failTries: number;
-  status: 'ready' | 'error' | 'retrying';
-  attempts: number;
+  status?: 'error';
+  isLoading: boolean;
 };
 
 export class RemoteBoundary extends Component<BoundaryProps, BoundaryState> {
   state: BoundaryState = {
     error: null,
     failTries: 0,
-    status: 'ready',
-    attempts: 1,
+    isLoading: false,
   };
 
   static getDerivedStateFromError(error: unknown): Pick<BoundaryState, 'error' | 'status'> {
@@ -197,9 +190,7 @@ export class RemoteBoundary extends Component<BoundaryProps, BoundaryState> {
   }
 
   componentDidCatch(error: unknown, info: ErrorInfo) {
-    this.setState(({ failTries, attempts }) => failTries === attempts
-      ? null
-      : { failTries: failTries + 1 });
+    this.setState(({ failTries }) => ({ failTries: failTries + 1 }));
 
     const { host, remote } = this.props;
     console.error(`${host.name}: не удалось загрузить ${remote.name}`, error, info);
@@ -208,10 +199,7 @@ export class RemoteBoundary extends Component<BoundaryProps, BoundaryState> {
   onRepeat = async () => {
     const { host, remote, onLoad } = this.props;
 
-    this.setState(({ attempts }) => ({
-      status: 'retrying',
-      attempts: attempts + 1,
-    }));
+    this.setState({ isLoading: true });
 
     const moduleId = getModuleId(remote);
     moduleCache.delete(moduleId);
@@ -219,29 +207,37 @@ export class RemoteBoundary extends Component<BoundaryProps, BoundaryState> {
     try {
       const loaded = await fetchRemoteComponent(host, remote, onLoad);
       moduleCache.set(moduleId, loaded);
-      this.setState({ error: null, status: 'ready' });
+      this.setState({ error: null, status: undefined, isLoading: false });
     } catch (error) {
       this.setState(({ failTries }) => ({
         error,
         status: 'error',
+        isLoading: false,
         failTries: failTries + 1,
       }));
     }
   };
 
   render() {
-    const { error, failTries, status, attempts } = this.state;
-    const { host, remote, loading, component, children, fallback, support } = this.props;
-    const context = { host, remote };
+    const { error, failTries, status, isLoading } = this.state;
+    const { host, remote, fallbacks, support, children, component } = this.props;
+    const context = { host, remote, support };
+
+    if (error) {
+     return renderFallback(fallbacks.error, {
+        ...context,
+        error,
+        onRepeat: this.onRepeat,
+        failTries,
+        isLoading,
+      });
+    }
 
     const Module = loadModule(this.props);
 
     return (
-      <Suspense fallback={renderFallback(loading, context)}>
-        {typeof children === 'function'
-          ? children(Module)
-          : <Module />
-        }
+      <Suspense fallback={renderFallback(fallbacks.loading, context)}>
+          {typeof children === 'function' ? children(Module) : <Module />}
       </Suspense>
     );
   }

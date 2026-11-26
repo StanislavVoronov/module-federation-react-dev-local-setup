@@ -42,14 +42,13 @@ function ContextualUserInfo({ module, user }: { module: DynamicModuleFallbackCon
   return <p>{user}: {module.remote.name}</p>;
 }
 
-function ErrorModal({ error, onRepeat, failTries, loading, attempts }: {
+function ErrorModal({ error, onRepeat, failTries, isLoading }: {
   error: unknown;
   onRepeat: () => void;
   failTries: number;
-  loading: boolean;
-  attempts: number;
+  isLoading: boolean;
 }) {
-  return <button type="button" onClick={onRepeat} disabled={loading}>{String(error)} ({failTries}/{attempts})</button>;
+  return <button type="button" onClick={onRepeat} disabled={isLoading}>{String(error)} ({failTries})</button>;
 }
 
 <DynamicModule {...props} fallbacks={{ error: ErrorModal }} />;

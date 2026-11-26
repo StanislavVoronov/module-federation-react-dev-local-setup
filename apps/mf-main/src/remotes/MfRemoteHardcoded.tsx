@@ -27,8 +27,10 @@ export function MfRemoteHardcoded() {
         manifest: 'mf-manifest.json',
         component: 'App',
       }}
-      loading={<p className="host__status">Загружаю test…</p>}
-      fallback={DefaultRemoteError}
+      fallbacks={{
+        error: DefaultRemoteError,
+        loading: <p className="host__status">Загружаю test…</p>,
+      }}
       component={MfRemoteApp}
     >
       {(Module) => <Module />}
