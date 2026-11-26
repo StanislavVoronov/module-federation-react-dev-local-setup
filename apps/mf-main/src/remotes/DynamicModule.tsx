@@ -31,6 +31,8 @@ type ErrorFallbackContext = DynamicModuleFallbackContext & {
   error: unknown;
   onRepeat: () => void;
   failTries: number;
+  loading: boolean;
+  attempts: number;
   support?: Support;
 };
 type Fallback<T extends object> = ReactNode | ((context: T) => ReactNode);
@@ -51,15 +53,14 @@ type RenderProps<T extends RemoteComponent> = {
   children?: (Module: T) => ReactNode;
 };
 
-type ModuleComponent = LazyExoticComponent<ComponentType>;
+type ModuleComponent = ComponentType | LazyExoticComponent<ComponentType>;
 type RemoteModule = { default: ComponentType };
 
 const DEFAULT_MANIFEST = 'importmap.json';
-const NO_ERROR = Symbol('no error');
-const moduleCache = new Map<string, Promise<RemoteModule>>();
+const moduleCache = new Map<string, RemoteModule>();
 
-function renderFallback<T extends object>(fallback: Fallback<T>, context: T): ReactNode {
-  return typeof fallback === 'function' ? fallback(context) : fallback ?? null;
+function renderFallback<T extends object>(Fallback: Fallback<T>, context: T): ReactNode {
+  return typeof Fallback === 'function' ? <Fallback {...context} /> : Fallback ?? null;
 }
 
 function getModuleId({ id, component }: BaseProps['remote']): string {
@@ -67,59 +68,63 @@ function getModuleId({ id, component }: BaseProps['remote']): string {
   return !expose || expose === '.' ? id : `${id}/${expose}`;
 }
 
-function fetchRemoteComponent(
+async function fetchRemoteComponent(
   host: BaseProps['host'],
   remote: BaseProps['remote'],
   onLoad?: BaseProps['onLoad'],
 ): Promise<RemoteModule> {
   const moduleId = getModuleId(remote);
+  const { id, manifest = DEFAULT_MANIFEST, path } = remote;
 
-  const request = (async () => {
-    const { id, manifest = DEFAULT_MANIFEST, path } = remote;
-    try {
-      const params = new URLSearchParams({ hostId: host.id, remoteId: id });
-      const manifestPath = `${path.replace(/\/+$/, '')}/${manifest.replace(/^\/+/, '')}`;
-      const entry = `${manifestPath}?${params}`;
-      registerRemotes([{ name: id, entry }]);
-    } catch (cause) {
-      const error = new Error(`Не удалось зарегистрировать ${id}: ${String(cause)}`, { cause });
-      onLoad?.({ status: 'error', error });
-      throw error;
-    }
+  try {
+    const params = new URLSearchParams({ hostId: host.id, remoteId: id });
+    const manifestPath = `${path}/${manifest}`;
+    const entry = `${manifestPath}?${params}`;
+    registerRemotes([{ name: id, entry }]);
+  } catch (cause) {
+    const error = new Error(`Не удалось зарегистрировать ${id}: ${String(cause)}`, { cause });
+    onLoad?.({ status: 'error', error });
 
-    let module: RemoteModule;
-    try {
-      const loaded = await loadRemote<RemoteModule>(moduleId);
-      if (!loaded?.default) throw new Error('default export не найден');
-      module = loaded;
-    } catch (cause) {
-      const error = new Error(`Не удалось загрузить ${moduleId}: ${String(cause)}`, { cause });
-      onLoad?.({ status: 'error', error });
-      throw error;
-    }
+    throw error;
+  }
+
+  try {
+    const loaded = await loadRemote<RemoteModule>(moduleId);
+
+    if (!loaded?.default) throw new Error('default export не найден');
 
     onLoad?.({ status: 'success' });
-    return module;
-  })();
-  moduleCache.set(moduleId, request);
-  void request.catch(() => { moduleCache.delete(moduleId); });
-  return request;
+
+    return loaded;
+  } catch (cause) {
+    const error = new Error(`Не удалось загрузить ${moduleId}: ${String(cause)}`, { cause });
+
+    onLoad?.({ status: 'error', error });
+
+    throw error;
+  }
 }
 
-function loadModule({ host, remote, onLoad }: LoadedBoundaryProps) {
+function loadModule({ host, remote, onLoad }: BoundaryProps) {
   const moduleId = getModuleId(remote);
 
   const cached = moduleCache.get(moduleId);
 
   if (cached) {
-    return cached
+    return cached.default;
   }
 
-  const Component = lazy(() => {
-    return fetchRemoteComponent(host, remote, onLoad);
-  });
+  const Component = lazy(async () => {
+    const pending = moduleCache.get(moduleId);
 
-  moduleCache.set(moduleId, Component as unknown as Promise<RemoteModule>)
+    if (pending) return pending;
+
+    const request = await fetchRemoteComponent(host, remote, onLoad);
+
+    moduleCache.set(moduleId, request);
+
+    return request;
+  });
 
   return Component;
 }
@@ -138,7 +143,15 @@ export function DynamicModule<T extends RemoteComponent>({
   onLoad,
   children,
 }: BaseProps & RenderProps<T>): ReactNode {
-  if (!remote.enabled) return renderFallback(fallbacks.placeholder, { host, remote });
+  if (!remote.enabled) {
+    const context = { host, remote };
+
+    return (
+      <Suspense fallback={renderFallback(fallbacks.loading, context)}>
+        {renderFallback(fallbacks.placeholder, context)}
+      </Suspense>
+    );
+  }
 
   return (
     <RemoteBoundary
@@ -155,107 +168,80 @@ export function DynamicModule<T extends RemoteComponent>({
   );
 }
 
-type LoadedBoundaryProps = DynamicModuleFallbackContext & {
+type BoundaryProps = DynamicModuleFallbackContext & {
   onLoad?: BaseProps['onLoad'];
   support?: Support;
   loading?: BaseProps['fallbacks']['loading'];
   fallback: BaseProps['fallbacks']['error'];
+  component?: ModuleComponent;
   children: (Module: ModuleComponent) => ReactNode;
-};
-
-type BoundaryProps = LoadedBoundaryProps | {
-  remote?: undefined;
-  name: string;
-  hostName?: string;
-  fallback: (error: unknown, onRepeat: () => void, failTries: number) => ReactNode;
-  children: ReactNode;
 };
 
 type BoundaryState = {
   error: unknown;
   failTries: number;
-  failureCounted: boolean;
-  component?: ModuleComponent;
-  retryRequest?: Promise<RemoteModule>;
+  status: 'ready' | 'error' | 'retrying';
+  attempts: number;
 };
-
-function RemoteContent({ component, children }: {
-  component: ModuleComponent;
-  children: LoadedBoundaryProps['children'];
-}) {
-  return children(component);
-}
 
 export class RemoteBoundary extends Component<BoundaryProps, BoundaryState> {
   state: BoundaryState = {
-    error: NO_ERROR,
+    error: null,
     failTries: 0,
-    failureCounted: false,
-    component: this.props.remote ? loadModule(this.props) : undefined,
+    status: 'ready',
+    attempts: 1,
   };
 
-  static getDerivedStateFromError(error: unknown): Pick<BoundaryState, 'error'> {
-    return { error };
+  static getDerivedStateFromError(error: unknown): Pick<BoundaryState, 'error' | 'status'> {
+    return { error, status: 'error' };
   }
 
   componentDidCatch(error: unknown, info: ErrorInfo) {
-    this.setState(({ failTries, failureCounted }) => failureCounted
+    this.setState(({ failTries, attempts }) => failTries === attempts
       ? null
-      : { failTries: failTries + 1, failureCounted: true });
+      : { failTries: failTries + 1 });
 
-    const props = this.props;
-    const hostName = props.remote ? props.host.name : props.hostName ?? 'mf-host';
-    const name = props.remote ? props.remote.name : props.name;
-    console.error(`${hostName}: не удалось загрузить ${name}`, error, info);
+    const { host, remote } = this.props;
+    console.error(`${host.name}: не удалось загрузить ${remote.name}`, error, info);
   }
 
   onRepeat = async () => {
-    const props = this.props;
-    if (!props.remote || this.state.error === NO_ERROR) return;
+    const { host, remote, onLoad } = this.props;
 
-    let request: Promise<RemoteModule> | undefined;
+    this.setState(({ attempts }) => ({
+      status: 'retrying',
+      attempts: attempts + 1,
+    }));
+
+    const moduleId = getModuleId(remote);
+    moduleCache.delete(moduleId);
+
     try {
-      request = moduleCache.get(getModuleId(props.remote));
-      if (!request) request = fetchRemoteComponent(props.host, props.remote, props.onLoad);
-      const component = loadModule(props);
-      this.setState(({ retryRequest }) => retryRequest === request ? null : {
-        error: NO_ERROR,
-        failureCounted: false,
-        component,
-        retryRequest: request,
-      });
-
-      await request;
-      this.setState(({ retryRequest }) => retryRequest === request ? { retryRequest: undefined } : null);
+      const loaded = await fetchRemoteComponent(host, remote, onLoad);
+      moduleCache.set(moduleId, loaded);
+      this.setState({ error: null, status: 'ready' });
     } catch (error) {
-      this.setState(({ retryRequest, failTries, failureCounted }) => request && retryRequest !== request
-        ? null
-        : {
-          error,
-          failTries: request && failureCounted ? failTries : failTries + 1,
-          failureCounted: true,
-          retryRequest: undefined,
-        });
+      this.setState(({ failTries }) => ({
+        error,
+        status: 'error',
+        failTries: failTries + 1,
+      }));
     }
   };
 
   render() {
-    const { error, component: Component, failTries } = this.state;
-    const props = this.props;
-    if (!props.remote) {
-      return error === NO_ERROR ? props.children : props.fallback(error, this.onRepeat, failTries);
-    }
-
-    const { host, remote, loading, children, fallback, support } = props;
+    const { error, failTries, status, attempts } = this.state;
+    const { host, remote, loading, component, children, fallback, support } = this.props;
     const context = { host, remote };
-    if (error !== NO_ERROR) {
-      return renderFallback(fallback, { ...context, error, onRepeat: this.onRepeat, failTries, support });
-    }
-    if (!Component) return null;
+
+    const Module = loadModule(this.props);
 
     return (
       <Suspense fallback={renderFallback(loading, context)}>
-        <RemoteContent component={Component}>{children}</RemoteContent>
+        {typeof children === 'function'
+          ? children(Module)
+          : <Module />
+        }
       </Suspense>
     );
   }
