@@ -18,22 +18,17 @@ export type RemoteDescriptor = {
   title?: string;
 };
 
-const HOST = { id: 'mf_main', name: 'mf-main' };
-
 /** Рендерит произвольный remote-модуль по его описанию. */
 export function RemoteModule({ remote }: { remote: RemoteDescriptor }) {
   return (
     <DynamicModule
-      host={HOST}
       fallbacks={{ error: DefaultRemoteError }}
-      remote={{
-        id: remote.name,
-        name: remote.title ?? `${remote.name}/${remote.module}`,
-        enabled: true,
-        path: remote.path,
-        manifest: remote.manifest,
-        component: remote.module,
-      }}
+      id={remote.name}
+      name={remote.title ?? `${remote.name}/${remote.module}`}
+      enabled
+      path={remote.path}
+      manifest={remote.manifest}
+      componentName={remote.module}
     />
   );
 }

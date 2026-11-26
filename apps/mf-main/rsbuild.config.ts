@@ -33,6 +33,10 @@ export default defineConfig({
   // Единственная точка входа нужна только сборщику: приложение не монтирует
   // себя само, его запускает host/bus через exposes '.'.
   source: {
+    define: {
+      'import.meta.env.PUBLIC_FRONT_MODULE_ID': JSON.stringify(process.env.PUBLIC_FRONT_MODULE_ID ?? 'mf_main'),
+      'import.meta.env.PUBLIC_FRONT_MODULE_NAME': JSON.stringify(process.env.PUBLIC_FRONT_MODULE_NAME ?? 'mf-main'),
+    },
     entry: {
       index: './src/index.ts',
     },

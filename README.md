@@ -104,16 +104,31 @@ dev-серверы и от режима `mf-main` не зависят. А вот
 Всё то же самое плюс `npm run dev -w mf-host` на 7002 — пригодится, если
 правится сама оболочка.
 
+## Конфигурация DynamicModule
+
+Компонент принимает props верхнего уровня `id`, `name`, `enabled`, `path`,
+`manifest?`, `componentName?`, `supportUrl?`.
+Данные поддержки доступны fallback-компонентам на верхнем уровне `context`.
+`config`, `host` и отдельный `support` в props не передаются.
+
+Идентификатор и имя host берутся из `import.meta.env.PUBLIC_FRONT_MODULE_ID`
+и `import.meta.env.PUBLIC_FRONT_MODULE_NAME`. Для сборки mf-main значения
+по умолчанию — `mf_main` и `mf-main`; их можно изменить переменными окружения.
+Стенд задаёт собственные значения: `dynamic_module_test` и `Стенд`.
+
 ## Стенд DynamicModule
 
 ```bash
 npm run dev:dynamic-module
 ```
 
-Откройте <http://127.0.0.1:7010> и выберите сценарий. Стенд собирает [remote с компонентом заметки](apps/mf-main/tests/stand/remote/Note.tsx) отдельным компилятором Rsbuild с Module Federation. При первой успешной загрузке в Network видны `importmap.json`, `remoteEntry.js` и JS-чанк expose под `/fixtures/stand_notes/`.
+Откройте <http://127.0.0.1:7010>. Каждая вкладка собирается отдельным компилятором Rsbuild с Module Federation: `stand_notes`, `stand_counter`, `stand_tasks`, `stand_calculator`, `stand_preferences` и `stand_placeholder`. При первом открытии вкладки в Network видны её `importmap.json?hostId=…&remoteId=…`, `remoteEntry.js` и JS-чанк под `/fixtures/<id>/`. У задач задержка 2 секунды, калькулятора — 3, настроек — 4. Повторный переход использует кеш без loading. Placeholder не делает запросов до нажатия «Включить модуль».
+
+Дополнительные сценарии доступны через `?case=default`, `?case=retry`, `?case=retry-delayed`, `?case=slow`.
 
 - Для проверки кеша откройте «Root expose и кеш» и нажмите «Перемонтировать модуль». В журнале `onLoad` останется один `success`.
 - В сценарии «Ошибка загрузки и повтор» первый запрос завершается ошибкой. Нажмите «Повторить», чтобы загрузить модуль. Чтобы проверить повторный сбой и рост `failTries`, включите «Сохранять сбой» перед повтором.
+- В сценарии «Ошибка → повтор → успех через 5 секунд» нажмите «Повторить» после первого сбоя. Ошибка остаётся видимой с индикатором загрузки на пять секунд, затем появляется карточка модуля.
 - Медленные сценарии удерживают ответ до нажатия «Продолжить загрузку». Это даёт время проверить `loading`, ленивый `placeholder` и ленивый `error`.
 
 Браузерные автотесты сами запускают сервер на свободном порту. Для них можно установить Chromium или использовать установленный Google Chrome.

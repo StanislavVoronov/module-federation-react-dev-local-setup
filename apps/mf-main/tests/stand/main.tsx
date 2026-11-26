@@ -7,21 +7,23 @@ import { DynamicModule, RemoteBoundary } from '../../src/remotes/DynamicModule';
 import type { DynamicModuleFallbackContext } from '../../src/remotes/DynamicModule';
 import '../../src/index.css';
 
-type Scenario = Omit<DynamicModuleFallbackContext['remote'], 'id' | 'path' | 'enabled'> & { enabled?: boolean };
+type Scenario = Omit<DynamicModuleFallbackContext, 'host' | 'id' | 'path' | 'enabled'> & { enabled?: boolean };
 
 const cases = {
+  tabs: { name: 'Пять модулей во вкладках' },
   default: { name: 'Root expose и кеш' },
-  named: { name: 'Named expose и children', manifest: 'custom-manifest.json', component: './Widget' },
+  named: { name: 'Named expose и children', manifest: 'custom-manifest.json', componentName: './Widget' },
   disabled: { name: 'Выключенный remote', enabled: false },
   'slow-placeholder': { name: 'Медленный placeholder', enabled: false },
   slow: { name: 'Медленный remote' },
   silent: { name: 'Без loading' },
   register: { name: 'Ошибка регистрации' },
   'slow-error': { name: 'Медленный error fallback' },
-  missing: { name: 'Нет default export', component: './MissingDefault' },
+  missing: { name: 'Нет default export', componentName: './MissingDefault' },
   retry: { name: 'Ошибка загрузки и повтор' },
-  'render-error': { name: 'Ошибка рендера', component: './BrokenNote' },
-  preset: { name: 'Готовый компонент', component: './Widget' },
+  'retry-delayed': { name: 'Ошибка → повтор → успех через 5 секунд' },
+  'render-error': { name: 'Ошибка рендера', componentName: './BrokenNote' },
+  preset: { name: 'Готовый компонент', componentName: './Widget' },
 } satisfies Record<string, Scenario>;
 
 type Case = keyof typeof cases;
@@ -30,13 +32,15 @@ type EventStatus = Parameters<NonNullable<StandProps['onLoad']>>[0]['status'];
 
 function getCase(): Case {
   const key = new URLSearchParams(location.search).get('case');
-  return key && Object.hasOwn(cases, key) ? key as Case : 'default';
+  return key && Object.hasOwn(cases, key) ? key as Case : 'tabs';
 }
 
-const host = { id: 'dynamic_module_test', name: 'Стенд' };
+const host = { id: import.meta.env.PUBLIC_FRONT_MODULE_ID, name: import.meta.env.PUBLIC_FRONT_MODULE_NAME };
 const remoteId = 'stand_notes';
 const scenario = getCase();
 let initialRetryFailed = false;
+let registrationFailed = false;
+let remoteLoadFailed = false;
 let keepRetryFailure = false;
 let releaseRequest: (() => void) | undefined;
 const requestGate = new Promise<void>((resolve) => { releaseRequest = resolve; });
@@ -48,39 +52,63 @@ init({
   plugins: [{
     name: 'dynamic-module-fixtures',
     beforeRegisterRemote(args) {
+      if (args.remote.name === 'stand_registration_error' && !registrationFailed) {
+        registrationFailed = true;
+        throw new Error('Тестовая ошибка регистрации');
+      }
       if (args.remote.name === remoteId && (scenario === 'register' || scenario === 'slow-error')) {
         throw new Error('Регистрация отклонена стендом');
       }
       return args;
     },
+    createScript({ url }) {
+      const address = new URL(url, location.origin);
+      if (address.pathname === '/fixtures/stand_load_error/remoteEntry.js' && !remoteLoadFailed) {
+        remoteLoadFailed = true;
+        address.searchParams.set('failLoad', '1');
+        const script = document.createElement('script');
+        script.src = address.href;
+        return script;
+      }
+    },
     async beforeRequest(args) {
+      const tabDelays: Record<string, number> = {
+        ['stand_tasks/Tasks']: 2000,
+        ['stand_calculator/Calculator']: 3000,
+        ['stand_preferences/Preferences']: 4000,
+      };
+      if (scenario === 'tabs' && tabDelays[args.id]) {
+        await new Promise((resolve) => setTimeout(resolve, tabDelays[args.id]));
+      }
       if (args.id !== remoteId) return args;
-      if (scenario === 'retry' && (!initialRetryFailed || keepRetryFailure)) {
+      if ((scenario === 'retry' || scenario === 'retry-delayed') && (!initialRetryFailed || keepRetryFailure)) {
         initialRetryFailed = true;
         throw new Error('Remote недоступен');
       }
+      if (scenario === 'retry-delayed') await new Promise((resolve) => setTimeout(resolve, 5000));
       if (scenario === 'slow' || scenario === 'silent') await requestGate;
       return args;
     },
   }],
 });
 
-function Placeholder({ remote }: DynamicModuleFallbackContext) {
-  return <p>{remote.name} выключен</p>;
+function Placeholder({ name }: DynamicModuleFallbackContext) {
+  return <p>{name} выключен</p>;
 }
 
-function ErrorFallback({ error, failTries, isLoading, onRepeat, support }: {
+function ErrorFallback({ error, failTries, isLoading, onRepeat, supportUrl }: {
   error: unknown;
   failTries: number;
   isLoading: boolean;
   onRepeat: () => void;
-  support?: StandProps['support'];
+  supportUrl?: string;
 }) {
   return (
     <div className="host__error" role="alert">
       <pre>{error instanceof Error ? error.message : String(error)}</pre>
       <p>Неудачных попыток: {failTries}</p>
-      {support && <a href={support.url}>{support.title}</a>}
+      {isLoading && <p role="status">Загружаю модуль повторно…</p>}
+      {supportUrl && <a href={supportUrl}>{supportUrl}</a>}
       <button className="host__retry" type="button" onClick={onRepeat} disabled={isLoading}>
         {isLoading ? 'Повторная загрузка…' : 'Повторить'}
       </button>
@@ -102,28 +130,33 @@ function Stand() {
   const { enabled = true, ...options }: Scenario = cases[scenario];
   const [mount, setMount] = useState(0);
   const [events, setEvents] = useState<EventStatus[]>([]);
-  const remote = { id: remoteId, enabled, path: `/fixtures/${remoteId}`, ...options };
+  const [tab, setTab] = useState('Widget');
+  const [placeholderEnabled, setPlaceholderEnabled] = useState(false);
+  const tabs = [
+    { id: 'stand_notes', componentName: 'Widget', name: 'Заметка' },
+    { id: 'stand_counter', componentName: 'Counter', name: 'Счётчик' },
+    { id: 'stand_tasks', componentName: 'Tasks', name: 'Задачи' },
+    { id: 'stand_calculator', componentName: 'Calculator', name: 'Калькулятор' },
+    { id: 'stand_preferences', componentName: 'Preferences', name: 'Настройки' },
+    { id: 'stand_registration_error', componentName: 'RegistrationError', name: 'Ошибка регистрации' },
+    { id: 'stand_load_error', componentName: 'LoadError', name: 'Ошибка загрузки remote' },
+    { id: 'stand_placeholder', componentName: 'Placeholder', name: 'Placeholder' },
+  ];
+  const activeTab = tabs.find((item) => item.componentName === tab)!;
+  const config = { supportUrl: '#support', id: remoteId, enabled, path: `/fixtures/${remoteId}`, ...options };
   const props: Omit<StandProps, 'children'> = {
-    host,
-    remote,
+    ...config,
     fallbacks: {
       error: scenario === 'slow-error' ? (props) => <SlowError {...props} /> : ErrorFallback,
-      loading: scenario === 'silent' ? undefined : ({ remote }) => <p role="status">Загружаю {remote.name}…</p>,
-      placeholder: scenario === 'slow-placeholder' ? <SlowPlaceholder host={host} remote={remote} /> : Placeholder,
+      loading: scenario === 'silent' ? undefined : ({ name }) => <p role="status">Загружаю {name}…</p>,
+      placeholder: scenario === 'slow-placeholder' ? <SlowPlaceholder host={host} {...config} /> : Placeholder,
     },
-    support: { url: '#support', title: 'Поддержка' },
     onLoad: ({ status }) => setEvents((previous) => [...previous, status]),
   };
 
   return (
-    <main className="host">
+    <main className="host" data-load-events={JSON.stringify(events)}>
       <h1>Стенд DynamicModule</h1>
-      <label>
-        Сценарий{' '}
-        <select value={scenario} onChange={(event) => { location.search = `?case=${event.target.value}`; }}>
-          {Object.entries(cases).map(([key, item]) => <option key={key} value={key}>{item.name}</option>)}
-        </select>
-      </label>
       <div className="host__nav">
         <button type="button" onClick={() => setMount((value) => value + 1)}>Перемонтировать модуль</button>
         {scenario === 'retry' && (
@@ -137,8 +170,30 @@ function Stand() {
         )}
       </div>
       <h2>Модуль</h2>
+      {scenario === 'tabs' && (
+        <div className="host__nav" role="tablist" aria-label="Модули">
+          {tabs.map((item) => (
+            <button key={item.componentName} role="tab" id={`tab-${item.componentName}`} aria-controls="module-panel" aria-selected={tab === item.componentName}
+              className={`host__nav-link${tab === item.componentName ? ' host__nav-link--active' : ''}`}
+              onClick={() => setTab(item.componentName)}>{item.name}</button>
+          ))}
+        </div>
+      )}
       <section data-testid="module" aria-label="Результат">
-        {scenario === 'named' ? (
+        {scenario === 'tabs' ? (
+          <div role="tabpanel" id="module-panel" aria-labelledby={`tab-${tab}`} style={{ marginTop: 16 }}>
+            {tab === 'Placeholder' && (
+              <p><button onClick={() => setPlaceholderEnabled((value) => !value)}>
+                {placeholderEnabled ? 'Выключить модуль' : 'Включить модуль'}
+              </button></p>
+            )}
+            <DynamicModule key={mount} {...props}
+              {...activeTab}
+              path={`/fixtures/${activeTab.id}`}
+              enabled={tab !== 'Placeholder' || placeholderEnabled}
+            />
+          </div>
+        ) : scenario === 'named' ? (
           <DynamicModule<ComponentType<{ title: string }>> key={mount} {...props}>
             {(Module) => <Module title="Черновик заметки" />}
           </DynamicModule>
@@ -146,11 +201,6 @@ function Stand() {
           <DynamicModule key={mount} {...props} />
         )}
       </section>
-      <h2>Вызовы onLoad</h2>
-      <ol data-testid="load-events">
-        {events.map((status, index) => <li key={index}>{status}</li>)}
-      </ol>
-      <p id="support">Поддержка стенда</p>
     </main>
   );
 }

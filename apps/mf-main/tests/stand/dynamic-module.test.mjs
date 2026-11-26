@@ -44,7 +44,7 @@ function open(scenario) {
 }
 
 function events() {
-  return page.getByTestId('load-events').locator('li').allTextContents();
+  return page.locator('main').evaluate((element) => JSON.parse(element.dataset.loadEvents));
 }
 
 test('загружает root expose по importmap.json и использует кеш после перемонтирования', async () => {
@@ -143,7 +143,7 @@ test('отдельно сообщает об ошибке регистрации
   await open('register');
   await page.getByText(/Не удалось зарегистрировать stand_notes/).waitFor();
   assert.deepEqual(await events(), ['error']);
-  assert.equal(await page.getByRole('link', { name: 'Поддержка' }).getAttribute('href'), '#support');
+  assert.equal(await page.getByRole('link', { name: '#support' }).getAttribute('href'), '#support');
 });
 
 test('отсутствующий default export показывает ошибку загрузки', async () => {
@@ -224,6 +224,81 @@ test('ошибка рендера throw null попадает в error fallback'
   assert.ok(scripts.length > count, JSON.stringify(scripts));
 });
 
+test('повтор пять секунд показывает loading внутри ошибки и завершается успехом', async () => {
+  await open('retry-delayed');
+  await page.getByText('Неудачных попыток: 1').waitFor();
+  const alert = page.getByRole('alert');
+  const error = await alert.locator('pre').textContent();
+  const started = Date.now();
+  await alert.getByRole('button', { name: 'Повторить', exact: true }).click();
+  await alert.getByRole('status').waitFor();
+  assert.equal(await alert.locator('pre').textContent(), error);
+  assert.ok(await alert.getByRole('button').isDisabled());
+  assert.deepEqual(await events(), ['error']);
+  await page.waitForTimeout(4000);
+  assert.ok(await alert.getByRole('status').isVisible());
+  await page.getByRole('textbox', { name: 'Текст заметки' }).waitFor({ timeout: 5000 });
+  assert.ok(Date.now() - started >= 5000);
+  assert.equal(await alert.count(), 0);
+  assert.deepEqual(await events(), ['error', 'success']);
+});
+
+test('пять вкладок загружают отдельные MF-контейнеры с рабочими элементами управления', async () => {
+  const chunks = [];
+  const manifests = [];
+  const entries = [];
+  const requestedModules = new Set();
+  page.on('request', (request) => {
+    const match = new URL(request.url()).pathname.match(/^\/fixtures\/([^/]+)\//);
+    if (match) requestedModules.add(match[1]);
+  });
+  page.on('response', (response) => {
+    const url = new URL(response.url());
+    if (response.ok() && url.pathname.endsWith('/importmap.json')) manifests.push(url);
+    if (response.ok() && url.pathname.endsWith('/remoteEntry.js')) entries.push(url.pathname);
+    if (response.ok() && response.url().includes('__federation_expose_') && response.url().endsWith('.js')) chunks.push(response.url());
+  });
+  await open('tabs');
+  await page.getByRole('textbox', { name: 'Текст заметки' }).fill('Заметка');
+  assert.deepEqual([...requestedModules], ['stand_notes']);
+  await page.getByRole('tab', { name: 'Счётчик', exact: true }).click();
+  await page.getByRole('button', { name: 'Увеличить' }).click();
+  assert.equal(await page.getByLabel('Значение счётчика').textContent(), '1');
+  assert.deepEqual([...requestedModules], ['stand_notes', 'stand_counter']);
+  await page.getByRole('tab', { name: 'Задачи', exact: true }).click();
+  await page.getByLabel('Новая задача').fill('Проверить remote');
+  await page.getByRole('button', { name: 'Добавить', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Проверить remote' }).check();
+  await page.getByText('Выполнено 1 из 1').waitFor();
+  assert.deepEqual([...requestedModules], ['stand_notes', 'stand_counter', 'stand_tasks']);
+  await page.getByRole('tab', { name: 'Калькулятор', exact: true }).click();
+  await page.getByLabel('Цена, ₽').fill('200');
+  await page.getByLabel('Скидка, %').fill('25');
+  assert.equal(await page.getByLabel('К оплате', { exact: true }).textContent(), '150.00 ₽');
+  assert.deepEqual([...requestedModules], ['stand_notes', 'stand_counter', 'stand_tasks', 'stand_calculator']);
+  await page.getByRole('tab', { name: 'Настройки', exact: true }).click();
+  await page.getByLabel('Ваше имя').fill('Анна');
+  await page.getByRole('button', { name: 'Применить' }).click();
+  await page.getByText(/Анна, настройки применены/).waitFor();
+  for (const expose of ['Widget', 'Counter', 'Tasks', 'Calculator', 'Preferences']) {
+    assert.ok(chunks.some((url) => url.includes(`__federation_expose_${expose}`)), expose);
+  }
+  const ids = ['stand_notes', 'stand_counter', 'stand_tasks', 'stand_calculator', 'stand_preferences'];
+  assert.equal(manifests.length, ids.length);
+  for (const id of ids) {
+    assert.ok(manifests.some((url) => url.pathname === `/fixtures/${id}/importmap.json`
+      && url.searchParams.get('remoteId') === id
+      && url.searchParams.get('hostId') === 'dynamic_module_test'), id);
+    assert.ok(entries.includes(`/fixtures/${id}/remoteEntry.js`), id);
+  }
+  const count = chunks.length;
+  await page.getByRole('tab', { name: 'Заметка', exact: true }).click();
+  await page.getByLabel('Текст заметки').waitFor();
+  assert.equal(chunks.length, count);
+  assert.equal(manifests.length, ids.length);
+  assert.equal(entries.length, ids.length);
+});
+
 test('готовый компонент загружается через Module Federation и принимает ввод', async () => {
   const scripts = [];
   page.on('response', (response) => {
@@ -239,3 +314,90 @@ test('готовый компонент загружается через Module
   assert.ok(scripts.some((url) => url.endsWith('/remoteEntry.js')));
   assert.ok(scripts.some((url) => url.includes('__federation_expose_Widget')));
 });
+
+test('повторный переход к медленной вкладке использует кеш без loading', async () => {
+  const requests = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/fixtures/')) requests.push(request.url());
+  });
+  await open('tabs');
+  await page.getByLabel('Текст заметки').waitFor();
+  const started = Date.now();
+  await page.getByRole('tab', { name: 'Задачи', exact: true }).click();
+  await page.getByRole('status').waitFor();
+  await page.getByLabel('Новая задача').waitFor();
+  assert.ok(Date.now() - started >= 2000);
+  await page.getByRole('tab', { name: 'Заметка', exact: true }).click();
+  await page.getByLabel('Текст заметки').waitFor();
+  const requestCount = requests.length;
+  const reports = await events();
+  await page.evaluate(() => {
+    const panel = document.querySelector('[data-testid="module"]');
+    window.loadingFlashed = false;
+    const observer = new MutationObserver((changes) => {
+      for (const change of changes) {
+        for (const node of change.addedNodes) {
+          if (node instanceof Element && (node.matches('[role="status"]') || node.querySelector('[role="status"]'))) {
+            window.loadingFlashed = true;
+          }
+        }
+      }
+    });
+    observer.observe(panel, { childList: true, subtree: true });
+  });
+  const returning = Date.now();
+  await page.getByRole('tab', { name: 'Задачи', exact: true }).click();
+  await page.getByLabel('Новая задача').waitFor({ timeout: 1000 });
+  assert.ok(Date.now() - returning < 1500);
+  assert.equal(await page.evaluate(() => window.loadingFlashed), false);
+  assert.equal(requests.length, requestCount);
+  assert.deepEqual(await events(), reports);
+});
+
+test('вкладка placeholder не загружает выключенный модуль и позволяет включить его', async () => {
+  await open('tabs');
+  await page.getByLabel('Текст заметки').waitFor();
+  const reports = await events();
+  const requests = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/fixtures/')) requests.push(request.url());
+  });
+  await page.getByRole('tab', { name: 'Placeholder', exact: true }).click();
+  await page.getByText('Placeholder выключен', { exact: true }).waitFor();
+  assert.deepEqual(await events(), reports);
+  assert.equal(requests.length, 0);
+  await page.getByRole('button', { name: 'Включить модуль' }).click();
+  await page.getByLabel('Текст заметки').fill('Модуль включён');
+  assert.equal((await events()).length, reports.length + 1);
+  await page.getByRole('button', { name: 'Выключить модуль' }).click();
+  await page.getByText('Placeholder выключен', { exact: true }).waitFor();
+});
+
+for (const { tab, id, message } of [
+  { tab: 'Ошибка регистрации', id: 'stand_registration_error', message: /Не удалось зарегистрировать stand_registration_error/ },
+  { tab: 'Ошибка загрузки remote', id: 'stand_load_error', message: /Не удалось загрузить stand_load_error/ },
+]) {
+  test(`${tab}: показывает ошибку и восстанавливается после повтора`, async () => {
+    const manifests = [];
+    const scripts = [];
+    page.on('response', (response) => {
+      if (response.url().includes(`/fixtures/${id}/importmap.json?`)) manifests.push(response.status());
+      if (new URL(response.url()).pathname === `/fixtures/${id}/remoteEntry.js`) scripts.push(response.status());
+    });
+    await open('tabs');
+    await page.getByLabel('Текст заметки').waitFor();
+    await page.getByRole('tab', { name: tab, exact: true }).click();
+    const alert = page.getByRole('alert');
+    await alert.getByText(message).waitFor();
+    await alert.getByText('Неудачных попыток: 1', { exact: true }).waitFor();
+    assert.deepEqual(await events(), ['success', 'error']);
+    assert.deepEqual(manifests, id === 'stand_load_error' ? [200] : []);
+    assert.deepEqual(scripts, id === 'stand_load_error' ? [503] : []);
+    await alert.getByRole('button', { name: 'Повторить', exact: true }).click();
+    await page.getByLabel('Текст заметки').fill('Загрузка восстановлена');
+    assert.equal(await page.getByRole('alert').count(), 0);
+    assert.deepEqual(await events(), ['success', 'error', 'success']);
+    assert.ok(manifests.length >= 1 && manifests.every((status) => status === 200));
+    assert.deepEqual(scripts, id === 'stand_load_error' ? [503, 200] : [200]);
+  });
+}

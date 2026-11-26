@@ -2,13 +2,10 @@ import type { ComponentType } from 'react';
 import { DynamicModule, type DynamicModuleFallbackContext } from '../src/remotes/DynamicModule';
 
 const props = {
-  host: { id: 'mf_main', name: 'mf-main' },
-  remote: {
-    id: 'mf_remote_1',
-    name: 'mf-remote-1',
-    enabled: true,
-    path: '/mf-remote-1',
-  },
+  id: 'mf_remote_1',
+  name: 'mf-remote-1',
+  enabled: true,
+  path: '/mf-remote-1',
   fallbacks: { error: null },
 };
 
@@ -25,7 +22,7 @@ const UserInfo = () => <p>User info</p>;
 }} />;
 
 // @ts-expect-error A fallback must be supplied for errors.
-<DynamicModule host={props.host} remote={props.remote} />;
+<DynamicModule id={props.id} name={props.name} path={props.path} enabled />;
 
 // @ts-expect-error Loading does not replace the required error fallback.
 <DynamicModule {...props} fallbacks={{ loading: UserInfo }} />;
@@ -39,7 +36,7 @@ const UserInfo = () => <p>User info</p>;
 />;
 
 function ContextualUserInfo({ module, user }: { module: DynamicModuleFallbackContext; user: string }) {
-  return <p>{user}: {module.remote.name}</p>;
+  return <p>{user}: {module.name}</p>;
 }
 
 function ErrorModal({ error, onRepeat, failTries, isLoading }: {
@@ -58,15 +55,15 @@ function ErrorModal({ error, onRepeat, failTries, isLoading }: {
   fallbacks={{
     placeholder: (context) => <ContextualUserInfo module={context} user="1" />,
     loading: ({ host }) => <p>{host.name}</p>,
-    error: ({ remote, error, onRepeat, failTries }) => (
-      <button type="button" onClick={onRepeat}>{remote.name}: {String(error)} ({failTries})</button>
+    error: ({ name, error, onRepeat, failTries }) => (
+      <button type="button" onClick={onRepeat}>{name}: {String(error)} ({failTries})</button>
     ),
   }}
 />;
 
 <DynamicModule
   {...props}
-  remote={{ ...props.remote, component: './Widget', manifest: 'mf-manifest.json' }}
+  componentName="./Widget" manifest="mf-manifest.json"
 />;
 
 <DynamicModule<Widget> {...props}>
@@ -83,3 +80,14 @@ function ErrorModal({ error, onRepeat, failTries, isLoading }: {
   {/* @ts-expect-error Required props of the remote component are preserved. */}
   {(Module) => <Module />}
 </DynamicModule>;
+
+// @ts-expect-error Host identity comes from the build environment.
+<DynamicModule {...props} host={{ id: 'custom', name: 'Custom' }} />;
+
+// @ts-expect-error Support fields are top-level props.
+<DynamicModule {...props} support={{ url: '/help', title: 'Help' }} />;
+
+<DynamicModule {...props} supportUrl="/help" />;
+
+// @ts-expect-error Module fields are top-level props.
+<DynamicModule {...props} config={props} />;
