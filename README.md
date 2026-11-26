@@ -104,6 +104,27 @@ dev-серверы и от режима `mf-main` не зависят. А вот
 Всё то же самое плюс `npm run dev -w mf-host` на 7002 — пригодится, если
 правится сама оболочка.
 
+## Стенд DynamicModule
+
+```bash
+npm run dev:dynamic-module
+```
+
+Откройте <http://127.0.0.1:7010> и выберите сценарий. Стенд собирает [remote с компонентом заметки](apps/mf-main/tests/stand/remote/Note.tsx) отдельным компилятором Rsbuild с Module Federation. При первой успешной загрузке в Network видны `importmap.json`, `remoteEntry.js` и JS-чанк expose под `/fixtures/stand_notes/`.
+
+- Для проверки кеша откройте «Root expose и кеш» и нажмите «Перемонтировать модуль». В журнале `onLoad` останется один `success`.
+- В сценарии «Ошибка загрузки и повтор» первый запрос завершается ошибкой. Нажмите «Повторить», чтобы загрузить модуль. Чтобы проверить повторный сбой и рост `failTries`, включите «Сохранять сбой» перед повтором.
+- Медленные сценарии удерживают ответ до нажатия «Продолжить загрузку». Это даёт время проверить `loading`, ленивый `placeholder` и ленивый `error`.
+
+Браузерные автотесты сами запускают сервер на свободном порту. Для них можно установить Chromium или использовать установленный Google Chrome.
+
+```bash
+npx playwright install chromium
+npm run test:dynamic-module
+
+PLAYWRIGHT_CHANNEL=chrome npm run test:dynamic-module
+```
+
 ## Монорепа
 
 Workspaces описаны в корневом [package.json](package.json) как `apps/*`, задачи —

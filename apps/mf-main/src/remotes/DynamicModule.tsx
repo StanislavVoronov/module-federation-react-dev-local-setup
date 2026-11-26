@@ -67,11 +67,12 @@ function getModuleId({ id, component }: BaseProps['remote']): string {
   return !expose || expose === '.' ? id : `${id}/${expose}`;
 }
 
-async function fetchRemoteComponent(
-  host: BaseProps['host'],
-  remote: BaseProps['remote'],
-  onLoad?: BaseProps['onLoad'],
-): Promise<RemoteModule> {
+async function fetchRemoteComponent({
+  host,
+  remote,
+  onLoad,
+  force = false,
+}: Pick<BaseProps, 'host' | 'remote' | 'onLoad'> & { force?: boolean }): Promise<RemoteModule> {
   const moduleId = getModuleId(remote);
   const { id, manifest = DEFAULT_MANIFEST, path } = remote;
 
@@ -79,7 +80,7 @@ async function fetchRemoteComponent(
     const params = new URLSearchParams({ hostId: host.id, remoteId: id });
     const manifestPath = `${path}/${manifest}`;
     const entry = `${manifestPath}?${params}`;
-    registerRemotes([{ name: id, entry }]);
+    registerRemotes([{ name: id, entry }], { force });
   } catch (cause) {
     const error = new Error(`Не удалось зарегистрировать ${id}: ${String(cause)}`, { cause });
     onLoad?.({ status: 'error', error });
@@ -118,7 +119,7 @@ function loadModule({ host, remote, onLoad }: BoundaryProps) {
 
     if (pending) return pending;
 
-    const request = await fetchRemoteComponent(host, remote, onLoad);
+    const request = await fetchRemoteComponent({ host, remote, onLoad });
 
     moduleCache.set(moduleId, request);
 
@@ -174,7 +175,6 @@ type BoundaryProps = BaseProps & {
 type BoundaryState = {
   error: unknown;
   failTries: number;
-  status?: 'error';
   isLoading: boolean;
 };
 
@@ -185,8 +185,8 @@ export class RemoteBoundary extends Component<BoundaryProps, BoundaryState> {
     isLoading: false,
   };
 
-  static getDerivedStateFromError(error: unknown): Pick<BoundaryState, 'error' | 'status'> {
-    return { error, status: 'error' };
+  static getDerivedStateFromError(error: unknown): Pick<BoundaryState, 'error'> {
+    return { error };
   }
 
   componentDidCatch(error: unknown, info: ErrorInfo) {
@@ -205,13 +205,12 @@ export class RemoteBoundary extends Component<BoundaryProps, BoundaryState> {
     moduleCache.delete(moduleId);
 
     try {
-      const loaded = await fetchRemoteComponent(host, remote, onLoad);
+      const loaded = await fetchRemoteComponent({ host, remote, onLoad, force: true });
       moduleCache.set(moduleId, loaded);
-      this.setState({ error: null, status: undefined, isLoading: false });
+      this.setState({ error: null, isLoading: false });
     } catch (error) {
       this.setState(({ failTries }) => ({
         error,
-        status: 'error',
         isLoading: false,
         failTries: failTries + 1,
       }));
@@ -219,25 +218,30 @@ export class RemoteBoundary extends Component<BoundaryProps, BoundaryState> {
   };
 
   render() {
-    const { error, failTries, status, isLoading } = this.state;
+    const { error, failTries, isLoading } = this.state;
     const { host, remote, fallbacks, support, children, component } = this.props;
     const context = { host, remote, support };
+    const loading = renderFallback(fallbacks.loading, context);
 
-    if (error) {
-     return renderFallback(fallbacks.error, {
-        ...context,
-        error,
-        onRepeat: this.onRepeat,
-        failTries,
-        isLoading,
-      });
+    if (error !== null) {
+      return (
+        <Suspense fallback={loading}>
+          {renderFallback(fallbacks.error, {
+            ...context,
+            error,
+            onRepeat: this.onRepeat,
+            failTries,
+            isLoading,
+          })}
+        </Suspense>
+      );
     }
 
-    const Module = loadModule(this.props);
+    const Module = component ?? loadModule(this.props);
 
     return (
-      <Suspense fallback={renderFallback(fallbacks.loading, context)}>
-          {typeof children === 'function' ? children(Module) : <Module />}
+      <Suspense fallback={loading}>
+        {typeof children === 'function' ? children(Module) : <Module />}
       </Suspense>
     );
   }

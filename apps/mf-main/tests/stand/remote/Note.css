@@ -1,0 +1,35 @@
+.stand-note {
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+  border-inline-start: 4px solid #6d28d9;
+  border-radius: 12px;
+  color: #2e1065;
+  padding: 20px 24px;
+}
+
+.stand-note h3 {
+  margin: 0;
+  font-size: 21px;
+}
+
+.stand-note p {
+  margin: 8px 0 16px;
+}
+
+.stand-note label {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.stand-note input {
+  background: #fff;
+  border: 1px solid #a78bfa;
+  border-radius: 8px;
+  box-sizing: border-box;
+  color: inherit;
+  font: inherit;
+  font-weight: 400;
+  padding: 10px 12px;
+  width: 100%;
+}

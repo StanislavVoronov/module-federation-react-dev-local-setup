@@ -1,23 +1,8 @@
-import { loadRemote } from '@module-federation/enhanced/runtime';
-import { lazy } from 'react';
-import type { ComponentType } from 'react';
-import { DefaultRemoteError, RemoteBoundary } from './DynamicModule';
-
-const MfRemoteApp = lazy(async () => {
-  const loaded = await loadRemote<{ default: ComponentType }>(
-    'mf_remote/App',
-  );
-
-  if (!loaded) {
-    throw new Error('mf_remote/App не найден');
-  }
-
-  return loaded;
-});
+import { DefaultRemoteError, DynamicModule } from './DynamicModule';
 
 export function MfRemoteHardcoded() {
   return (
-    <RemoteBoundary
+    <DynamicModule
       host={{ id: 'mf_main', name: 'mf-host' }}
       remote={{
         id: 'mf_remote',
@@ -31,9 +16,6 @@ export function MfRemoteHardcoded() {
         error: DefaultRemoteError,
         loading: <p className="host__status">Загружаю test…</p>,
       }}
-      component={MfRemoteApp}
-    >
-      {(Module) => <Module />}
-    </RemoteBoundary>
+    />
   );
 }
