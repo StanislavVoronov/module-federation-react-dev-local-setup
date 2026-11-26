@@ -1,17 +1,7 @@
-import {
-  loadRemote,
-  registerRemotes,
-} from '@module-federation/enhanced/runtime';
+import { loadRemote } from '@module-federation/enhanced/runtime';
 import { lazy, Suspense } from 'react';
 import type { ComponentType } from 'react';
-import { RemoteBoundary } from '../RemoteBoundary';
-
-registerRemotes([
-  {
-    name: 'mf_remote',
-    entry: '/mf-remote/mf-manifest.json',
-  },
-]);
+import { DefaultRemoteError, RemoteBoundary } from './DynamicModule';
 
 const MfRemoteApp = lazy(async () => {
   const loaded = await loadRemote<{ default: ComponentType }>(
@@ -27,7 +17,10 @@ const MfRemoteApp = lazy(async () => {
 
 export function MfRemoteHardcoded() {
   return (
-    <RemoteBoundary name="test">
+    <RemoteBoundary
+      name="test"
+      fallback={(error) => <DefaultRemoteError remote={{ name: 'test' }} error={error} />}
+    >
       <Suspense fallback={<p className="host__status">Загружаю test…</p>}>
         <MfRemoteApp />
       </Suspense>

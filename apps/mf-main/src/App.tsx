@@ -12,14 +12,16 @@ import './index.css';
 
 const MF_REMOTE_1: RemoteDescriptor = {
   name: 'mf_remote_1',
-  entry: '/mf-remote-1/mf-manifest.json',
+  path: '/mf-remote-1',
+  manifest: 'mf-manifest.json',
   module: 'Widget',
   title: 'mf-remote-1',
 };
 
 const MF_REMOTE_2: RemoteDescriptor = {
   name: 'mf_remote_2',
-  entry: '/mf-remote-2/mf-manifest.json',
+  path: '/mf-remote-2',
+  manifest: 'mf-manifest.json',
   module: 'Weather',
   title: 'Погода',
 };
