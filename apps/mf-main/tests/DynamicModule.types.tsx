@@ -3,8 +3,8 @@ import { DynamicModule, type DynamicModuleFallbackContext } from '../src/remotes
 const source = {
   hostId: 'mf_main',
   hostName: 'mf-main',
-  remoteId: 'mf_remote_1',
-  remoteName: 'mf-remote-1',
+  id: 'mf_remote_1',
+  name: 'mf-remote-1',
   publicPath: '/mf-remote-1',
 };
 const props = { source, fallbacks: { error: null } };
@@ -42,7 +42,7 @@ const UserInfo = () => <p>User info</p>;
 <DynamicModule {...props} fallbacks={{ error: undefined }} />;
 
 function ContextualUserInfo({ module }: { module: DynamicModuleFallbackContext }) {
-  return <p>{module.source.remoteName}</p>;
+  return <p>{module.source.name}</p>;
 }
 function ErrorModal({ error, onRepeat, failTries, isLoading }: {
   error: unknown; onRepeat: () => void; failTries: number; isLoading: boolean;
@@ -52,8 +52,8 @@ function ErrorModal({ error, onRepeat, failTries, isLoading }: {
 <DynamicModule {...props} fallbacks={{ error: ErrorModal, loading: UserInfo, placeholder: <UserInfo /> }} />;
 <DynamicModule {...props} fallbacks={{
   placeholder: (context) => <ContextualUserInfo module={context} />,
-  loading: ({ source }) => <p>{source.remoteName}</p>,
-  error: ({ source, error, onRepeat }) => <button onClick={onRepeat}>{source.remoteName}: {String(error)}</button>,
+  loading: ({ source }) => <p>{source.name}</p>,
+  error: ({ source, error, onRepeat }) => <button onClick={onRepeat}>{source.name}: {String(error)}</button>,
 }} />;
 <DynamicModule {...props} source={{ ...source, componentName: './Widget', manifest: 'mf-manifest.json' }} />;
 // @ts-expect-error supportTitle is not supported.
@@ -103,8 +103,8 @@ const profileContext: ProfileContext = { userId: '42', onClose: () => {} };
 } }} />;
 
 <DynamicModule<ProfileContext> {...props} context={profileContext} fallbacks={{
-  loading: ({ source, userId }) => <p>{source.remoteName}: {userId}</p>,
-  error: ({ source, error }) => <p>{source.remoteName}: {String(error)}</p>,
+  loading: ({ source, userId }) => <p>{source.name}: {userId}</p>,
+  error: ({ source, error }) => <p>{source.name}: {String(error)}</p>,
   placeholder: (fallbackProps) => {
     // @ts-expect-error Configuration fields must not be flattened into fallback props.
     void fallbackProps.publicPath;
@@ -115,4 +115,4 @@ const profileContext: ProfileContext = { userId: '42', onClose: () => {} };
 // @ts-expect-error Support fields are no longer part of source.
 <DynamicModule {...props} source={{ ...source, supportUrl: '/help' }} />;
 // @ts-expect-error Source must specify hostId.
-<DynamicModule {...props} source={{ remoteId: 'remote', remoteName: 'Remote', hostName: 'Host', enabled: true, publicPath: '/remote' }} />;
+<DynamicModule {...props} source={{ id: 'remote', name: 'Remote', hostName: 'Host', enabled: true, publicPath: '/remote' }} />;

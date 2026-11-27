@@ -6,8 +6,8 @@ export function MfRemoteHardcoded() {
       source={{
         hostId: import.meta.env.PUBLIC_FRONT_MODULE_ID,
         hostName: import.meta.env.PUBLIC_FRONT_MODULE_NAME,
-        remoteId: 'mf_remote',
-        remoteName: 'test',
+        id: 'mf_remote',
+        name: 'test',
         enabled: true,
         publicPath: '/mf-remote',
         manifest: 'mf-manifest.json',

@@ -10,8 +10,8 @@ import type {
 
 export type DynamicModuleSource = {
   /** Federation container name. */
-  remoteId: string;
-  remoteName: string;
+  id: string;
+  name: string;
   hostId: string;
   hostName: string;
   enabled?: boolean;
@@ -71,12 +71,12 @@ function renderFallback<T extends Record<string, unknown>>(Fallback: Fallback<T>
   return (Fallback as ReactNode) ?? null;
 }
 
-function getModuleId({ remoteId, componentName }: Pick<BaseProps, 'remoteId' | 'componentName'>): string {
+function getModuleId({ id, componentName }: Pick<BaseProps, 'id' | 'componentName'>): string {
   const expose = componentName?.replace(/^\.\//, '');
-  return !expose || expose === '.' ? remoteId : `${remoteId}/${expose}`;
+  return !expose || expose === '.' ? id : `${id}/${expose}`;
 }
 
-function getCacheKey(props: Pick<BaseProps, 'remoteId' | 'componentName' | 'publicPath'>): string {
+function getCacheKey(props: Pick<BaseProps, 'id' | 'componentName' | 'publicPath'>): string {
   return `${props.publicPath}/${getModuleId(props)}`;
 }
 
@@ -95,7 +95,7 @@ function fetchRemoteComponent({
   onLoad,
   force = false,
 }: LoadOptions & { force?: boolean }): Promise<RemoteModule> {
-  const { hostId, remoteId, publicPath, manifest = DEFAULT_MANIFEST } = source;
+  const { hostId, id, publicPath, manifest = DEFAULT_MANIFEST } = source;
   const moduleId = getModuleId(source);
 
   const cached = moduleCache.get(getCacheKey(source));
@@ -103,16 +103,16 @@ function fetchRemoteComponent({
 
   const request = Promise.resolve().then(async () => {
     try {
-      const params = new URLSearchParams({ hostId, remoteId });
+      const params = new URLSearchParams({ hostId, remoteId: id });
       const manifestPath = `${publicPath}/${manifest}`;
       const entry = `${manifestPath}?${params}`;
-      const previousPath = registeredPublicPaths.get(remoteId);
-      registerRemotes([{ name: remoteId, entry }], {
+      const previousPath = registeredPublicPaths.get(id);
+      registerRemotes([{ name: id, entry }], {
         force: force || (previousPath !== undefined && previousPath !== publicPath),
       });
-      registeredPublicPaths.set(remoteId, publicPath);
+      registeredPublicPaths.set(id, publicPath);
     } catch (cause) {
-      const error = new Error(`Не удалось зарегистрировать ${remoteId}: ${String(cause)}`, { cause });
+      const error = new Error(`Не удалось зарегистрировать ${id}: ${String(cause)}`, { cause });
       void notifyLoad(onLoad, { status: 'error', error });
 
       throw error;
@@ -208,8 +208,8 @@ export class RemoteBoundary<T = unknown> extends Component<BoundaryProps<T>, Bou
   componentDidCatch(error: unknown, info: ErrorInfo) {
     this.setState(({ failTries }) => ({ failTries: failTries + 1 }));
 
-    const { hostName, remoteName } = this.props.source;
-    console.error(`${hostName}: не удалось загрузить ${remoteName}`, error, info);
+    const { hostName, name } = this.props.source;
+    console.error(`${hostName}: не удалось загрузить ${name}`, error, info);
   }
 
   onRepeat = async (): Promise<void> => {
@@ -263,12 +263,12 @@ export class RemoteBoundary<T = unknown> extends Component<BoundaryProps<T>, Bou
 }
 
 export function DefaultRemoteError({
-  source: { remoteName },
+  source: { name },
   error,
 }: { source: DynamicModuleSource; error: unknown }) {
   return (
     <div className="host__error">
-      <strong>{remoteName} недоступен.</strong>
+      <strong>{name} недоступен.</strong>
       <pre>{error instanceof Error ? error.message : String(error)}</pre>
     </div>
   );

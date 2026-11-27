@@ -107,14 +107,14 @@ dev-серверы и от режима `mf-main` не зависят. А вот
 ## Конфигурация DynamicModule
 
 Компонент принимает `source`, `context`, `fallbacks` и необязательный `onLoad`.
-В `source` входят `hostId`, `hostName`, `remoteId`, `remoteName`, `publicPath`, `enabled?`, `manifest?`, `componentName?`. Без `enabled` модуль включён; без `componentName` загружается корневой expose.
+В `source` входят `hostId`, `hostName`, `id`, `name`, `publicPath`, `enabled?`, `manifest?`, `componentName?`. Без `enabled` модуль включён; без `componentName` загружается корневой expose.
 Поля поддержки удалены. Fallback-компоненты получают поля `context` через spread и отдельный prop `source` без разворачивания. `source`, `error`, `onRepeat`, `failTries`, `isLoading` задаёт DynamicModule. Поля пользовательского контекста в типах fallback необязательны, поскольку сам `context` можно не передавать.
 
 Generic описывает данные и обработчики `context`, передаваемые модулю через spread:
 
 ```tsx
 <DynamicModule<{ userId: string; onClose: () => void }>
-  source={{ hostId: 'main', hostName: 'Приложение', remoteId: 'profile', remoteName: 'Профиль', enabled: true, publicPath: '/profile' }}
+  source={{ hostId: 'main', hostName: 'Приложение', id: 'profile', name: 'Профиль', enabled: true, publicPath: '/profile' }}
   context={{ userId: '42', onClose: handleClose }}
   fallbacks={{ error: DefaultRemoteError }}
 />

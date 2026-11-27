@@ -21,7 +21,7 @@ function setup() {
   const exports = {};
   new Function('require', 'exports', code)((id) => id === '@module-federation/enhanced/runtime' ? runtime : require(id), exports);
   function boundary(id = 'remote') {
-    const props = { hostId: 'test', hostName: 'Test', remoteId: id, remoteName: id, publicPath: `/${id}`, enabled: true, fallbacks: { error: null } };
+    const props = { hostId: 'test', hostName: 'Test', id: id, name: id, publicPath: `/${id}`, enabled: true, fallbacks: { error: null } };
     exports.loadModule({ source: props });
     const instance = new exports.RemoteBoundary({ source: props, fallbacks: props.fallbacks });
     instance.state.error = new Error('initial failure');
@@ -85,7 +85,7 @@ for (const asynchronous of [false, true]) {
         if (asynchronous) return Promise.reject(new Error('callback failure'));
         throw new Error('callback failure');
       };
-      const props = { hostId: 'test', hostName: 'Test', remoteId: 'remote', remoteName: 'Remote', publicPath: '/remote', onLoad: callback };
+      const props = { hostId: 'test', hostName: 'Test', id: 'remote', name: 'Remote', publicPath: '/remote', onLoad: callback };
       fixture.loadModule({ source: props, onLoad: props.onLoad });
       const request = fixture.fetchRemoteComponent({ source: props, onLoad: props.onLoad });
       await Promise.resolve();
@@ -104,7 +104,7 @@ for (const asynchronous of [false, true]) {
 
 test('publicPath change creates separate components and registers the new address', async () => {
   const fixture = setup();
-  const props = { hostId: 'test', hostName: 'Test', remoteId: 'remote', remoteName: 'Remote', publicPath: '/first', enabled: true, fallbacks: { error: null } };
+  const props = { hostId: 'test', hostName: 'Test', id: 'remote', name: 'Remote', publicPath: '/first', enabled: true, fallbacks: { error: null } };
   const first = fixture.loadModule({ source: props, onLoad: props.onLoad });
   const initial = fixture.fetchRemoteComponent({ source: props, onLoad: props.onLoad });
   await Promise.resolve();
@@ -125,9 +125,9 @@ test('publicPath change creates separate components and registers the new addres
   assert.equal(fixture.loadModule({ source: props, onLoad: props.onLoad }), first);
 });
 
-test('manifest URL uses hostId and remoteId from source', async () => {
+test('manifest URL uses hostId and id from source', async () => {
   const fixture = setup();
-  const source = { hostId: 'another_host', hostName: 'Host label', remoteId: 'another_remote', remoteName: 'Remote label', enabled: true, publicPath: '/module' };
+  const source = { hostId: 'another_host', hostName: 'Host label', id: 'another_remote', name: 'Remote label', enabled: true, publicPath: '/module' };
   fixture.loadModule({ source });
   const request = fixture.fetchRemoteComponent({ source });
   await Promise.resolve();
