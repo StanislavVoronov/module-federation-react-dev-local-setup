@@ -106,15 +106,15 @@ dev-серверы и от режима `mf-main` не зависят. А вот
 
 ## Конфигурация DynamicModule
 
-Компонент принимает `config`, `context`, `fallbacks` и необязательный `onLoad`.
-В `config` входят `id`, `name`, `enabled`, `publicPath`, `manifest?`, `componentName?`, `supportUrl?`.
-`supportTitle` не поддерживается. Fallback-компоненты получают поля `context` через spread и отдельный prop `config` без разворачивания. `config`, `error`, `onRepeat`, `failTries`, `isLoading` задаёт DynamicModule. Поля пользовательского контекста в типах fallback необязательны, поскольку сам `context` можно не передавать.
+Компонент принимает `source`, `context`, `fallbacks` и необязательный `onLoad`.
+В `source` входят `hostId`, `hostName`, `remoteId`, `remoteName`, `publicPath`, `enabled?`, `manifest?`, `componentName?`. Без `enabled` модуль включён; без `componentName` загружается корневой expose.
+Поля поддержки удалены. Fallback-компоненты получают поля `context` через spread и отдельный prop `source` без разворачивания. `source`, `error`, `onRepeat`, `failTries`, `isLoading` задаёт DynamicModule. Поля пользовательского контекста в типах fallback необязательны, поскольку сам `context` можно не передавать.
 
 Generic описывает данные и обработчики `context`, передаваемые модулю через spread:
 
 ```tsx
 <DynamicModule<{ userId: string; onClose: () => void }>
-  config={{ id: 'profile', name: 'Профиль', enabled: true, publicPath: '/profile' }}
+  source={{ hostId: 'main', hostName: 'Приложение', remoteId: 'profile', remoteName: 'Профиль', enabled: true, publicPath: '/profile' }}
   context={{ userId: '42', onClose: handleClose }}
   fallbacks={{ error: DefaultRemoteError }}
 />
@@ -123,10 +123,9 @@ Generic описывает данные и обработчики `context`, п�
 `context` всегда необязателен. Для передачи любого значения в `context` требуется явный generic интерфейса; автоматическое выведение типа отключено. Без generic (тип по умолчанию — `unknown`) `context` передавать нельзя.
 `children` не поддерживается. Модуль всегда рендерится через `<Module {...context} />`.
 `context` — обычные props модуля, а не React Context. Он не хранится в общем кеше: каждый экземпляр получает собственные актуальные данные и обработчики.
-DynamicModule не оборачивает компоненты в `React.memo`. Если fallback сам использует `React.memo`, новый объект `context` с теми же значениями полей не вызывает дополнительный ререндер при стабильной ссылке на `config`. Новые ссылки на вложенные объекты или обработчики считаются изменением props.
+DynamicModule не оборачивает компоненты в `React.memo`. Если fallback сам использует `React.memo`, новый объект `context` с теми же значениями полей не вызывает дополнительный ререндер при стабильной ссылке на `source`. Новые ссылки на вложенные объекты или обработчики считаются изменением props.
 
-Идентификатор и имя host берутся из `import.meta.env.PUBLIC_FRONT_MODULE_ID`
-и `import.meta.env.PUBLIC_FRONT_MODULE_NAME`. Для сборки mf-main значения
+DynamicModule получает host из `source.hostId` и `source.hostName`. Вызывающие компоненты mf-main заполняют их из `import.meta.env.PUBLIC_FRONT_MODULE_ID` и `import.meta.env.PUBLIC_FRONT_MODULE_NAME`. Для сборки mf-main значения
 по умолчанию — `mf_main` и `mf-main`; их можно изменить переменными окружения.
 Стенд задаёт собственные значения: `dynamic_module_test` и `Стенд`.
 

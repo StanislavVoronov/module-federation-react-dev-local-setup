@@ -1,12 +1,13 @@
 import { DynamicModule, type DynamicModuleFallbackContext } from '../src/remotes/DynamicModule';
 
-const config = {
-  id: 'mf_remote_1',
-  name: 'mf-remote-1',
-  enabled: true,
+const source = {
+  hostId: 'mf_main',
+  hostName: 'mf-main',
+  remoteId: 'mf_remote_1',
+  remoteName: 'mf-remote-1',
   publicPath: '/mf-remote-1',
 };
-const props = { config, fallbacks: { error: null } };
+const props = { source, fallbacks: { error: null } };
 type WidgetContext = { initialCount: number; onChange: (count: number) => void };
 const UserInfo = () => <p>User info</p>;
 
@@ -34,14 +35,14 @@ const UserInfo = () => <p>User info</p>;
 <DynamicModule {...props}><span>Child</span></DynamicModule>;
 
 // @ts-expect-error Error fallback is required.
-<DynamicModule config={config} />;
+<DynamicModule source={source} />;
 // @ts-expect-error Loading does not replace error fallback.
 <DynamicModule {...props} fallbacks={{ loading: UserInfo }} />;
 // @ts-expect-error Use null to hide error content.
 <DynamicModule {...props} fallbacks={{ error: undefined }} />;
 
 function ContextualUserInfo({ module }: { module: DynamicModuleFallbackContext }) {
-  return <p>{module.config.name}</p>;
+  return <p>{module.source.remoteName}</p>;
 }
 function ErrorModal({ error, onRepeat, failTries, isLoading }: {
   error: unknown; onRepeat: () => void; failTries: number; isLoading: boolean;
@@ -51,12 +52,12 @@ function ErrorModal({ error, onRepeat, failTries, isLoading }: {
 <DynamicModule {...props} fallbacks={{ error: ErrorModal, loading: UserInfo, placeholder: <UserInfo /> }} />;
 <DynamicModule {...props} fallbacks={{
   placeholder: (context) => <ContextualUserInfo module={context} />,
-  loading: ({ config }) => <p>{config.name}</p>,
-  error: ({ config, error, onRepeat }) => <button onClick={onRepeat}>{config.name}: {String(error)}</button>,
+  loading: ({ source }) => <p>{source.remoteName}</p>,
+  error: ({ source, error, onRepeat }) => <button onClick={onRepeat}>{source.remoteName}: {String(error)}</button>,
 }} />;
-<DynamicModule {...props} config={{ ...config, componentName: './Widget', manifest: 'mf-manifest.json', supportUrl: '/help' }} />;
+<DynamicModule {...props} source={{ ...source, componentName: './Widget', manifest: 'mf-manifest.json' }} />;
 // @ts-expect-error supportTitle is not supported.
-<DynamicModule {...props} config={{ ...config, supportTitle: 'Help' }} />;
+<DynamicModule {...props} source={{ ...source, supportTitle: 'Help' }} />;
 // @ts-expect-error Config fields are no longer top-level props.
 <DynamicModule {...props} publicPath="/other" />;
 // @ts-expect-error Host identity comes from the build environment.
@@ -102,11 +103,16 @@ const profileContext: ProfileContext = { userId: '42', onClose: () => {} };
 } }} />;
 
 <DynamicModule<ProfileContext> {...props} context={profileContext} fallbacks={{
-  loading: ({ config, userId }) => <p>{config.name}: {userId}</p>,
-  error: ({ config, error }) => <p>{config.name}: {String(error)}</p>,
+  loading: ({ source, userId }) => <p>{source.remoteName}: {userId}</p>,
+  error: ({ source, error }) => <p>{source.remoteName}: {String(error)}</p>,
   placeholder: (fallbackProps) => {
     // @ts-expect-error Configuration fields must not be flattened into fallback props.
     void fallbackProps.publicPath;
-    return <p>{fallbackProps.config.publicPath}</p>;
+    return <p>{fallbackProps.source.publicPath}</p>;
   },
 }} />;
+
+// @ts-expect-error Support fields are no longer part of source.
+<DynamicModule {...props} source={{ ...source, supportUrl: '/help' }} />;
+// @ts-expect-error Source must specify hostId.
+<DynamicModule {...props} source={{ remoteId: 'remote', remoteName: 'Remote', hostName: 'Host', enabled: true, publicPath: '/remote' }} />;

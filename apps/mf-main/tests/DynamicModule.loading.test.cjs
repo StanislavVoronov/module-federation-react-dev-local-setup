@@ -21,9 +21,9 @@ function setup() {
   const exports = {};
   new Function('require', 'exports', code)((id) => id === '@module-federation/enhanced/runtime' ? runtime : require(id), exports);
   function boundary(id = 'remote') {
-    const props = { id, name: id, publicPath: `/${id}`, enabled: true, fallbacks: { error: null } };
-    exports.loadModule(props);
-    const instance = new exports.RemoteBoundary({ config: props, fallbacks: props.fallbacks });
+    const props = { hostId: 'test', hostName: 'Test', remoteId: id, remoteName: id, publicPath: `/${id}`, enabled: true, fallbacks: { error: null } };
+    exports.loadModule({ source: props });
+    const instance = new exports.RemoteBoundary({ source: props, fallbacks: props.fallbacks });
     instance.state.error = new Error('initial failure');
     // Apply queued state updates explicitly to simulate a committed React update.
     const updates = [];
@@ -85,9 +85,9 @@ for (const asynchronous of [false, true]) {
         if (asynchronous) return Promise.reject(new Error('callback failure'));
         throw new Error('callback failure');
       };
-      const props = { id: 'remote', publicPath: '/remote', onLoad: callback };
-      fixture.loadModule(props);
-      const request = fixture.fetchRemoteComponent(props);
+      const props = { hostId: 'test', hostName: 'Test', remoteId: 'remote', remoteName: 'Remote', publicPath: '/remote', onLoad: callback };
+      fixture.loadModule({ source: props, onLoad: props.onLoad });
+      const request = fixture.fetchRemoteComponent({ source: props, onLoad: props.onLoad });
       await Promise.resolve();
       if (fail) {
         fixture.pending[0].reject(new Error('network failure'));
@@ -104,15 +104,15 @@ for (const asynchronous of [false, true]) {
 
 test('publicPath change creates separate components and registers the new address', async () => {
   const fixture = setup();
-  const props = { id: 'remote', publicPath: '/first', enabled: true, fallbacks: { error: null } };
-  const first = fixture.loadModule(props);
-  const initial = fixture.fetchRemoteComponent(props);
+  const props = { hostId: 'test', hostName: 'Test', remoteId: 'remote', remoteName: 'Remote', publicPath: '/first', enabled: true, fallbacks: { error: null } };
+  const first = fixture.loadModule({ source: props, onLoad: props.onLoad });
+  const initial = fixture.fetchRemoteComponent({ source: props, onLoad: props.onLoad });
   await Promise.resolve();
   const nextProps = { ...props, publicPath: '/second' };
-  const second = fixture.loadModule(nextProps);
+  const second = fixture.loadModule({ source: nextProps });
   assert.notEqual(first, second);
-  assert.equal(fixture.loadModule({ ...nextProps, manifest: 'another.json' }), second);
-  const next = fixture.fetchRemoteComponent(nextProps);
+  assert.equal(fixture.loadModule({ source: { ...nextProps, manifest: 'another.json' } }), second);
+  const next = fixture.fetchRemoteComponent({ source: nextProps });
   await Promise.resolve();
   assert.equal(fixture.pending.length, 2);
   assert.equal(fixture.registered[1].options.force, true);
@@ -121,6 +121,18 @@ test('publicPath change creates separate components and registers the new addres
   await next;
   fixture.pending[0].resolve({ default: () => null });
   await initial;
-  assert.equal(fixture.loadModule(nextProps), second);
-  assert.equal(fixture.loadModule(props), first);
+  assert.equal(fixture.loadModule({ source: nextProps }), second);
+  assert.equal(fixture.loadModule({ source: props, onLoad: props.onLoad }), first);
+});
+
+test('manifest URL uses hostId and remoteId from source', async () => {
+  const fixture = setup();
+  const source = { hostId: 'another_host', hostName: 'Host label', remoteId: 'another_remote', remoteName: 'Remote label', enabled: true, publicPath: '/module' };
+  fixture.loadModule({ source });
+  const request = fixture.fetchRemoteComponent({ source });
+  await Promise.resolve();
+  assert.equal(fixture.registered[0].remotes[0].name, 'another_remote');
+  assert.equal(fixture.registered[0].remotes[0].entry, '/module/importmap.json?hostId=another_host&remoteId=another_remote');
+  fixture.pending[0].resolve({ default: () => null });
+  await request;
 });

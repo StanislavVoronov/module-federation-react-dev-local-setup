@@ -139,11 +139,11 @@ test('ленивый error fallback работает внутри Suspense', asy
   assert.deepEqual(await events(), ['error']);
 });
 
-test('отдельно сообщает об ошибке регистрации и показывает ссылку поддержки', async () => {
+test('отдельно сообщает об ошибке регистрации', async () => {
   await open('register');
   await page.getByText(/Не удалось зарегистрировать stand_notes/).waitFor();
   assert.deepEqual(await events(), ['error']);
-  assert.equal(await page.getByRole('link', { name: '#support' }).getAttribute('href'), '#support');
+  assert.equal(await page.getByRole('link').count(), 0);
 });
 
 test('отсутствующий default export показывает ошибку загрузки', async () => {
@@ -478,8 +478,8 @@ test('fallbacks получают context без лишних ререндеро�
     assert.equal(await page.getByTestId(`${name}-label`).textContent(), 'Первое значение');
     const keys = (await page.getByRole('region', { name, exact: true }).getAttribute('data-props')).split(',');
     assert.deepEqual(keys, (name === 'error'
-      ? ['config', 'label', 'onAction', 'error', 'failTries', 'isLoading', 'onRepeat']
-      : ['config', 'label', 'onAction']).sort());
+      ? ['source', 'label', 'onAction', 'error', 'failTries', 'isLoading', 'onRepeat']
+      : ['source', 'label', 'onAction']).sort());
   }
   const renders = await Promise.all(names.map((name) => page.getByTestId(`${name}-renders`).textContent()));
   await page.getByRole('button', { name: 'Ререндер родителя', exact: true }).click();
