@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import './Note.css';
 
-export default function Note({ title = 'Заметка' }: { title?: string }) {
+export default function Note({ title = 'Заметка', onChange }: { title?: string; onChange?: (value: string) => void }) {
   const [note, setNote] = useState('');
 
   return (
@@ -13,7 +13,10 @@ export default function Note({ title = 'Заметка' }: { title?: string }) {
         <input
           type="text"
           value={note}
-          onChange={(event) => setNote(event.target.value)}
+          onChange={(event) => {
+            setNote(event.target.value);
+            onChange?.(event.target.value);
+          }}
           placeholder="Например, идея для встречи"
         />
       </label>

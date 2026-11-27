@@ -66,7 +66,7 @@ test('загружает root expose по importmap.json и использует
   assert.deepEqual(await events(), ['success']);
 });
 
-test('передаёт типизированному children named expose из указанного манифеста', async () => {
+test('передаёт типизированный context в named expose из указанного манифеста', async () => {
   const request = page.waitForRequest((item) => new URL(item.url()).pathname === '/fixtures/stand_notes/custom-manifest.json');
   await open('named');
   await request;
@@ -444,4 +444,28 @@ test('смена publicPath запрашивает новый манифест �
   await page.getByLabel('Текст заметки').fill('Снова работает');
   assert.equal(await page.getByRole('alert').count(), 0);
   assert.deepEqual(await events(), ['success', 'success', 'error']);
+});
+
+test('context передаёт данные и актуальные обработчики каждому экземпляру без перезагрузки', async () => {
+  const requests = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/fixtures/')) requests.push(request.url());
+  });
+  await open('context');
+  const first = page.getByTestId('context-0').getByLabel('Текст заметки');
+  const second = page.getByTestId('context-1').getByLabel('Текст заметки');
+  await first.fill('Первая');
+  await second.fill('Вторая');
+  assert.equal(await page.getByTestId('message-0').textContent(), '0:Первая');
+  assert.equal(await page.getByTestId('message-1').textContent(), '0:Вторая');
+  const count = requests.length;
+  await page.getByRole('button', { name: /Обновить родителя/ }).click();
+  await page.getByRole('heading', { name: 'Заметка 1, версия 1', exact: true }).waitFor();
+  assert.equal(await first.inputValue(), 'Первая');
+  assert.equal(await second.inputValue(), 'Вторая');
+  await first.fill('Обновлена');
+  assert.equal(await page.getByTestId('message-0').textContent(), '1:Обновлена');
+  assert.equal(await page.getByTestId('message-1').textContent(), '0:Вторая');
+  assert.equal(requests.length, count);
+  assert.deepEqual(await events(), ['success']);
 });

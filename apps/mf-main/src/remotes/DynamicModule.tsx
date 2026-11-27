@@ -3,14 +3,11 @@ import { Component, lazy, Suspense } from 'react';
 import type {
   ComponentType,
   ErrorInfo,
-  JSXElementConstructor,
   LazyExoticComponent,
   ReactNode,
 } from 'react';
 
-type RemoteComponent = JSXElementConstructor<never>;
-
-export type DynamicModuleFallbackContext = {
+export type DynamicModuleConfig = {
   /** Federation container name. */
   id: string;
   name: string;
@@ -23,6 +20,8 @@ export type DynamicModuleFallbackContext = {
   /** Key in `exposes`. Omit to load the root expose. */
   componentName?: string;
 };
+
+export type DynamicModuleFallbackContext = DynamicModuleConfig;
 
 type ErrorFallbackContext = DynamicModuleFallbackContext & {
   error: unknown;
@@ -43,9 +42,11 @@ type BaseProps = DynamicModuleFallbackContext & {
   };
 };
 
-type RenderProps<T extends RemoteComponent> = {
-  children?: (Module: T) => ReactNode;
-};
+export type DynamicModuleProps<T extends object = Record<string, never>> =
+  Pick<BaseProps, 'fallbacks' | 'onLoad'> & { config: DynamicModuleConfig } & (
+    | ({ children?: never } & ({} extends T ? { context?: T } : { context: T }))
+    | { children: (Module: ComponentType<T>) => ReactNode; context?: never }
+  );
 
 type ModuleComponent = ComponentType | LazyExoticComponent<ComponentType>;
 type RemoteModule = { default: ComponentType };
@@ -149,35 +150,32 @@ function loadModule(props: BoundaryProps) {
   return Component;
 }
 
-export function DynamicModule(
-  props: BaseProps & RenderProps<ComponentType>,
-): ReactNode;
-export function DynamicModule<T extends RemoteComponent>(
-  props: BaseProps & RenderProps<T> & { children: (Module: T) => ReactNode },
-): ReactNode;
-export function DynamicModule<T extends RemoteComponent>({
+export function DynamicModule<T extends object = Record<string, never>>({
+  config,
+  context,
   fallbacks,
   onLoad,
   children,
-  ...module
-}: BaseProps & RenderProps<T>): ReactNode {
-  if (!module.enabled) {
-
+}: DynamicModuleProps<T>): ReactNode {
+  if (!config.enabled) {
     return (
-      <Suspense fallback={renderFallback(fallbacks.loading, module)}>
-        {renderFallback(fallbacks.placeholder, module)}
+      <Suspense fallback={renderFallback(fallbacks.loading, config)}>
+        {renderFallback(fallbacks.placeholder, config)}
       </Suspense>
     );
   }
 
   return (
     <RemoteBoundary
-      key={getCacheKey(module)}
-      {...module}
+      key={getCacheKey(config)}
+      {...config}
       onLoad={onLoad}
       fallbacks={fallbacks}
     >
-      {(Module) => typeof children === 'function' ? children(Module as unknown as T) : <Module />}
+      {(Module) => {
+        const Remote = Module as ComponentType<T>;
+        return typeof children === 'function' ? children(Remote) : <Remote {...context as T} />;
+      }}
     </RemoteBoundary>
   );
 }

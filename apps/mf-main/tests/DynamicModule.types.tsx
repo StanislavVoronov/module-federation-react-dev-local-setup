@@ -1,93 +1,75 @@
-import type { ComponentType } from 'react';
 import { DynamicModule, type DynamicModuleFallbackContext } from '../src/remotes/DynamicModule';
 
-const props = {
+const config = {
   id: 'mf_remote_1',
   name: 'mf-remote-1',
   enabled: true,
   publicPath: '/mf-remote-1',
-  fallbacks: { error: null },
 };
-
-type Widget = ComponentType<{ initialCount: number }>;
+const props = { config, fallbacks: { error: null } };
+type WidgetContext = { initialCount: number; onChange: (count: number) => void };
 const UserInfo = () => <p>User info</p>;
 
 <DynamicModule {...props} />;
+<DynamicModule<WidgetContext> {...props} context={{ initialCount: 2, onChange: (count) => count.toFixed() }} />;
+<DynamicModule<{ title?: string }> {...props} />;
+<DynamicModule<{ title?: string }> {...props} context={{ title: 'Title' }} />;
+// Context may also be inferred.
+<DynamicModule {...props} context={{ userId: '42', onClose: () => {} }} />;
 
-<DynamicModule {...props} onLoad={(result) => {
-  if (result.status === 'success') {
-    // @ts-expect-error Reporting a successful load does not expose the module.
-    void result.module;
-  }
-}} />;
+// @ts-expect-error Required context cannot be omitted.
+<DynamicModule<WidgetContext> {...props} />;
+// @ts-expect-error Required handler is missing.
+<DynamicModule<WidgetContext> {...props} context={{ initialCount: 2 }} />;
+// @ts-expect-error Incorrect value type.
+<DynamicModule<WidgetContext> {...props} context={{ initialCount: '2', onChange: () => {} }} />;
+// @ts-expect-error Incorrect handler argument type.
+<DynamicModule<WidgetContext> {...props} context={{ initialCount: 2, onChange: (value: string) => {} }} />;
+// @ts-expect-error Unexpected context property.
+<DynamicModule<{ userId: string }> {...props} context={{ userId: '42', extra: true }} />;
 
-// @ts-expect-error A fallback must be supplied for errors.
-<DynamicModule id={props.id} name={props.name} publicPath={props.publicPath} enabled />;
-
-// @ts-expect-error Loading does not replace the required error fallback.
-<DynamicModule {...props} fallbacks={{ loading: UserInfo }} />;
-
-// @ts-expect-error Use null to explicitly hide error content.
-<DynamicModule {...props} fallbacks={{ error: undefined }} />;
-
-<DynamicModule
-  {...props}
-  fallbacks={{ placeholder: UserInfo, loading: UserInfo, error: <UserInfo /> }}
-/>;
-
-function ContextualUserInfo({ module, user }: { module: DynamicModuleFallbackContext; user: string }) {
-  return <p>{user}: {module.name}</p>;
-}
-
-function ErrorModal({ error, onRepeat, failTries, isLoading }: {
-  error: unknown;
-  onRepeat: () => void;
-  failTries: number;
-  isLoading: boolean;
-}) {
-  return <button type="button" onClick={onRepeat} disabled={isLoading}>{String(error)} ({failTries})</button>;
-}
-
-<DynamicModule {...props} fallbacks={{ error: ErrorModal }} />;
-
-<DynamicModule
-  {...props}
-  fallbacks={{
-    placeholder: (context) => <ContextualUserInfo module={context} user="1" />,
-    loading: ({ name }) => <p>{name}</p>,
-    error: ({ name, error, onRepeat, failTries }) => (
-      <button type="button" onClick={onRepeat}>{name}: {String(error)} ({failTries})</button>
-    ),
-  }}
-/>;
-
-<DynamicModule
-  {...props}
-  componentName="./Widget" manifest="mf-manifest.json"
-/>;
-
-<DynamicModule<Widget> {...props}>
-  {(Module) => <Module initialCount={2} />}
+<DynamicModule<WidgetContext> {...props}>
+  {(Module) => <Module initialCount={2} onChange={() => {}} />}
 </DynamicModule>;
-
-// @ts-expect-error Passing a generic requires a render function.
-<DynamicModule<Widget> {...props} />;
-
-// @ts-expect-error The rule also applies to components without props.
-<DynamicModule<ComponentType> {...props} />;
-
-<DynamicModule<Widget> {...props}>
-  {/* @ts-expect-error Required props of the remote component are preserved. */}
+<DynamicModule<WidgetContext> {...props}>
+  {/* @ts-expect-error Required props remain checked in custom rendering. */}
   {(Module) => <Module />}
 </DynamicModule>;
+// @ts-expect-error Choose context or children, not both.
+<DynamicModule<WidgetContext> {...props} context={{ initialCount: 2, onChange: () => {} }} children={() => null} />;
 
+// @ts-expect-error Error fallback is required.
+<DynamicModule config={config} />;
+// @ts-expect-error Loading does not replace error fallback.
+<DynamicModule {...props} fallbacks={{ loading: UserInfo }} />;
+// @ts-expect-error Use null to hide error content.
+<DynamicModule {...props} fallbacks={{ error: undefined }} />;
+
+function ContextualUserInfo({ module }: { module: DynamicModuleFallbackContext }) {
+  return <p>{module.name}</p>;
+}
+function ErrorModal({ error, onRepeat, failTries, isLoading }: {
+  error: unknown; onRepeat: () => void; failTries: number; isLoading: boolean;
+}) {
+  return <button onClick={onRepeat} disabled={isLoading}>{String(error)} ({failTries})</button>;
+}
+<DynamicModule {...props} fallbacks={{ error: ErrorModal, loading: UserInfo, placeholder: <UserInfo /> }} />;
+<DynamicModule {...props} fallbacks={{
+  placeholder: (context) => <ContextualUserInfo module={context} />,
+  loading: ({ name }) => <p>{name}</p>,
+  error: ({ name, error, onRepeat }) => <button onClick={onRepeat}>{name}: {String(error)}</button>,
+}} />;
+<DynamicModule {...props} config={{ ...config, componentName: './Widget', manifest: 'mf-manifest.json', supportUrl: '/help' }} />;
+// @ts-expect-error supportTitle is not supported.
+<DynamicModule {...props} config={{ ...config, supportTitle: 'Help' }} />;
+// @ts-expect-error Config fields are no longer top-level props.
+<DynamicModule {...props} publicPath="/other" />;
 // @ts-expect-error Host identity comes from the build environment.
 <DynamicModule {...props} host={{ id: 'custom', name: 'Custom' }} />;
 
-// @ts-expect-error Support fields are top-level props.
-<DynamicModule {...props} support={{ url: '/help', title: 'Help' }} />;
-
-<DynamicModule {...props} supportUrl="/help" />;
-
-// @ts-expect-error Module fields are top-level props.
-<DynamicModule {...props} config={props} />;
+<DynamicModule {...props} onLoad={(result) => {
+  if (result.status === 'success') {
+    // @ts-expect-error Successful notification does not expose the module.
+    void result.module;
+  }
+}} />;

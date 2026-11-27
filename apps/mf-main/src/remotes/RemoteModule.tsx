@@ -23,12 +23,14 @@ export function RemoteModule({ remote }: { remote: RemoteDescriptor }) {
   return (
     <DynamicModule
       fallbacks={{ error: DefaultRemoteError }}
-      id={remote.name}
-      name={remote.title ?? `${remote.name}/${remote.module}`}
-      enabled
-      publicPath={remote.path}
-      manifest={remote.manifest}
-      componentName={remote.module}
+      config={{
+        id: remote.name,
+        name: remote.title ?? `${remote.name}/${remote.module}`,
+        enabled: true,
+        publicPath: remote.path,
+        manifest: remote.manifest,
+        componentName: remote.module,
+      }}
     />
   );
 }

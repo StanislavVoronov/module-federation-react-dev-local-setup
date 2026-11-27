@@ -106,10 +106,23 @@ dev-серверы и от режима `mf-main` не зависят. А вот
 
 ## Конфигурация DynamicModule
 
-Компонент принимает props верхнего уровня `id`, `name`, `enabled`, `publicPath`,
-`manifest?`, `componentName?`, `supportUrl?`.
-Данные поддержки доступны fallback-компонентам на верхнем уровне `context`.
-`config`, `host` и отдельный `support` в props не передаются.
+Компонент принимает `config`, `context`, `fallbacks` и необязательный `onLoad`.
+В `config` входят `id`, `name`, `enabled`, `publicPath`, `manifest?`, `componentName?`, `supportUrl?`.
+`supportTitle` не поддерживается. Fallback-компоненты получают поля config и служебные параметры ошибки как раньше.
+
+Generic описывает данные и обработчики `context`, передаваемые модулю через spread:
+
+```tsx
+<DynamicModule<{ userId: string; onClose: () => void }>
+  config={{ id: 'profile', name: 'Профиль', enabled: true, publicPath: '/profile' }}
+  context={{ userId: '42', onClose: handleClose }}
+  fallbacks={{ error: DefaultRemoteError }}
+/>
+```
+
+Если тип содержит обязательные поля, `context` обязателен. Для типа только с необязательными полями его можно опустить.
+Для нестандартного рендера остаётся `children={(Module) => <Module ... />}` вместо `context`.
+`context` — обычные props модуля, а не React Context. Он не хранится в общем кеше: каждый экземпляр получает собственные актуальные данные и обработчики.
 
 Идентификатор и имя host берутся из `import.meta.env.PUBLIC_FRONT_MODULE_ID`
 и `import.meta.env.PUBLIC_FRONT_MODULE_NAME`. Для сборки mf-main значения

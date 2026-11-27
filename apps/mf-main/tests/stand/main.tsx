@@ -1,10 +1,9 @@
 import { init } from '@module-federation/enhanced/runtime';
 import * as React from 'react';
 import { lazy, useState } from 'react';
-import type { ComponentType, ComponentProps } from 'react';
 import { createRoot } from 'react-dom/client';
-import { DynamicModule, RemoteBoundary } from '../../src/remotes/DynamicModule';
-import type { DynamicModuleFallbackContext } from '../../src/remotes/DynamicModule';
+import { DynamicModule } from '../../src/remotes/DynamicModule';
+import type { DynamicModuleFallbackContext, DynamicModuleProps } from '../../src/remotes/DynamicModule';
 import '../../src/index.css';
 
 type Scenario = Omit<DynamicModuleFallbackContext, 'id' | 'publicPath' | 'enabled'> & { enabled?: boolean };
@@ -15,6 +14,7 @@ const cases = {
   rerender: { name: 'Сохранение состояния при ререндере' },
   'public-path': { name: 'Смена publicPath' },
   'onload-error': { name: 'Ошибка обработчика onLoad' },
+  context: { name: 'Контекст и обработчики' },
   named: { name: 'Named expose и children', manifest: 'custom-manifest.json', componentName: './Widget' },
   disabled: { name: 'Выключенный remote', enabled: false },
   'slow-placeholder': { name: 'Медленный placeholder', enabled: false },
@@ -30,7 +30,7 @@ const cases = {
 } satisfies Record<string, Scenario>;
 
 type Case = keyof typeof cases;
-type StandProps = ComponentProps<typeof RemoteBoundary>;
+type StandProps = DynamicModuleProps;
 type EventStatus = Parameters<NonNullable<StandProps['onLoad']>>[0]['status'];
 
 function getCase(): Case {
@@ -135,6 +135,7 @@ function Stand() {
   const [publicPath, setPublicPath] = useState(`/fixtures/${remoteId}`);
   const [renderCount, setRenderCount] = useState(0);
   const [events, setEvents] = useState<EventStatus[]>([]);
+  const [messages, setMessages] = useState(['', '']);
   const [tab, setTab] = useState('Widget');
   const [placeholderEnabled, setPlaceholderEnabled] = useState(false);
   const tabs = [
@@ -150,7 +151,7 @@ function Stand() {
   const activeTab = tabs.find((item) => item.componentName === tab)!;
   const config = { supportUrl: '#support', id: remoteId, enabled, publicPath, ...options };
   const props: Omit<StandProps, 'children'> = {
-    ...config,
+    config,
     fallbacks: {
       error: scenario === 'slow-error' ? (props) => <SlowError {...props} /> : ErrorFallback,
       loading: scenario === 'silent' ? undefined : ({ name }) => <p role="status">Загружаю {name}…</p>,
@@ -174,7 +175,7 @@ function Stand() {
             <button onClick={() => setPublicPath(`/fixtures/${remoteId}`)}>Исходный адрес</button>
           </>
         )}
-        {scenario === 'rerender' && (
+        {(scenario === 'rerender' || scenario === 'context') && (
           <button type="button" onClick={() => setRenderCount((value) => value + 1)}>Обновить родителя ({renderCount})</button>
         )}
         {scenario === 'retry' && (
@@ -206,15 +207,26 @@ function Stand() {
               </button></p>
             )}
             <DynamicModule key={mount} {...props}
-              {...activeTab}
-              publicPath={`/fixtures/${activeTab.id}`}
-              enabled={tab !== 'Placeholder' || placeholderEnabled}
+              config={{ ...config, ...activeTab, publicPath: `/fixtures/${activeTab.id}`, enabled: tab !== 'Placeholder' || placeholderEnabled }}
             />
           </div>
+        ) : scenario === 'context' ? (
+          <>
+            {[0, 1].map((index) => (
+              <section key={index} data-testid={`context-${index}`}>
+                <DynamicModule<{ title: string; onChange: (value: string) => void }>
+                  {...props}
+                  context={{
+                    title: `Заметка ${index + 1}, версия ${renderCount}`,
+                    onChange: (value) => setMessages((previous) => previous.map((message, item) => item === index ? `${renderCount}:${value}` : message)),
+                  }}
+                />
+                <output data-testid={`message-${index}`}>{messages[index]}</output>
+              </section>
+            ))}
+          </>
         ) : scenario === 'named' ? (
-          <DynamicModule<ComponentType<{ title: string }>> key={mount} {...props}>
-            {(Module) => <Module title="Черновик заметки" />}
-          </DynamicModule>
+          <DynamicModule<{ title: string }> key={mount} {...props} context={{ title: 'Черновик заметки' }} />
         ) : (
           <DynamicModule key={mount} {...props} />
         )}
