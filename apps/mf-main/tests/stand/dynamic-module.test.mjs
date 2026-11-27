@@ -469,3 +469,29 @@ test('context передаёт данные и актуальные обрабо
   assert.equal(requests.length, count);
   assert.deepEqual(await events(), ['success']);
 });
+
+test('fallbacks получают context без лишних ререндеров memo-компонентов', async () => {
+  await open('fallback-context');
+  await page.getByTestId('error-failures').filter({ hasText: /^1$/ }).waitFor();
+  const names = ['loading', 'error', 'placeholder'];
+  for (const name of names) {
+    assert.equal(await page.getByTestId(`${name}-label`).textContent(), 'Первое значение');
+    const keys = (await page.getByRole('region', { name, exact: true }).getAttribute('data-props')).split(',');
+    assert.deepEqual(keys, (name === 'error'
+      ? ['config', 'label', 'onAction', 'error', 'failTries', 'isLoading', 'onRepeat']
+      : ['config', 'label', 'onAction']).sort());
+  }
+  const renders = await Promise.all(names.map((name) => page.getByTestId(`${name}-renders`).textContent()));
+  await page.getByRole('button', { name: 'Ререндер родителя', exact: true }).click();
+  assert.equal(await page.getByTestId('parent-render').textContent(), '1');
+  assert.deepEqual(await Promise.all(names.map((name) => page.getByTestId(`${name}-renders`).textContent())), renders);
+  await page.getByRole('button', { name: 'Изменить контекст', exact: true }).click();
+  for (const name of names) {
+    assert.equal(await page.getByTestId(`${name}-label`).textContent(), 'Новое значение');
+  }
+  await page.getByRole('button', { name: 'Изменить обработчик', exact: true }).click();
+  for (const name of names) {
+    await page.getByRole('region', { name, exact: true }).getByRole('button', { name: 'Действие' }).click();
+    assert.equal(await page.getByTestId('last-action').textContent(), '1');
+  }
+});

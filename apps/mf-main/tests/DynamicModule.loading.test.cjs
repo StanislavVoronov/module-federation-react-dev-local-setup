@@ -21,9 +21,9 @@ function setup() {
   const exports = {};
   new Function('require', 'exports', code)((id) => id === '@module-federation/enhanced/runtime' ? runtime : require(id), exports);
   function boundary(id = 'remote') {
-    const props = { id, name: id, publicPath: `/${id}`, enabled: true, fallbacks: { error: null }, children: () => null };
+    const props = { id, name: id, publicPath: `/${id}`, enabled: true, fallbacks: { error: null } };
     exports.loadModule(props);
-    const instance = new exports.RemoteBoundary(props);
+    const instance = new exports.RemoteBoundary({ config: props, fallbacks: props.fallbacks });
     instance.state.error = new Error('initial failure');
     // Apply queued state updates explicitly to simulate a committed React update.
     const updates = [];

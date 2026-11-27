@@ -1,12 +1,12 @@
 import { init } from '@module-federation/enhanced/runtime';
 import * as React from 'react';
-import { lazy, useState } from 'react';
+import { lazy, memo, useCallback, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { DynamicModule } from '../../src/remotes/DynamicModule';
-import type { DynamicModuleFallbackContext, DynamicModuleProps } from '../../src/remotes/DynamicModule';
+import type { DynamicModuleConfig, DynamicModuleFallbackContext, DynamicModuleProps } from '../../src/remotes/DynamicModule';
 import '../../src/index.css';
 
-type Scenario = Omit<DynamicModuleFallbackContext, 'id' | 'publicPath' | 'enabled'> & { enabled?: boolean };
+type Scenario = Omit<DynamicModuleConfig, 'id' | 'publicPath' | 'enabled'> & { enabled?: boolean };
 
 const cases = {
   tabs: { name: 'Пять модулей во вкладках' },
@@ -14,8 +14,9 @@ const cases = {
   rerender: { name: 'Сохранение состояния при ререндере' },
   'public-path': { name: 'Смена publicPath' },
   'onload-error': { name: 'Ошибка обработчика onLoad' },
+  'fallback-context': { name: 'Контекст fallback-компонентов' },
   context: { name: 'Контекст и обработчики' },
-  named: { name: 'Named expose и children', manifest: 'custom-manifest.json', componentName: './Widget' },
+  named: { name: 'Named expose и context', manifest: 'custom-manifest.json', componentName: './Widget' },
   disabled: { name: 'Выключенный remote', enabled: false },
   'slow-placeholder': { name: 'Медленный placeholder', enabled: false },
   slow: { name: 'Медленный remote' },
@@ -89,22 +90,22 @@ init({
         throw new Error('Remote недоступен');
       }
       if (scenario === 'retry-delayed') await new Promise((resolve) => setTimeout(resolve, 5000));
-      if (scenario === 'slow' || scenario === 'silent') await requestGate;
+      if (scenario === 'slow' || scenario === 'silent' || scenario === 'fallback-context') await requestGate;
       return args;
     },
   }],
 });
 
-function Placeholder({ name }: DynamicModuleFallbackContext) {
+function Placeholder({ config: { name } }: DynamicModuleFallbackContext) {
   return <p>{name} выключен</p>;
 }
 
-function ErrorFallback({ error, failTries, isLoading, onRepeat, supportUrl }: {
+function ErrorFallback({ error, failTries, isLoading, onRepeat, config: { supportUrl } }: {
   error: unknown;
   failTries: number;
   isLoading: boolean;
   onRepeat: () => void;
-  supportUrl?: string;
+  config: DynamicModuleConfig;
 }) {
   return (
     <div className="host__error" role="alert">
@@ -129,6 +130,50 @@ const SlowError = lazy(async () => {
   return { default: ErrorFallback };
 });
 
+type ProbeContext = { label: string; onAction: () => void };
+const fallbackRenders: Record<string, number> = {};
+const FallbackProbe = memo(function FallbackProbe(props: DynamicModuleFallbackContext<ProbeContext> & { failTries?: number }) {
+  const { config: { name }, label, onAction, failTries } = props;
+  fallbackRenders[name] = (fallbackRenders[name] ?? 0) + 1;
+  return (
+    <section aria-label={name} data-props={Object.keys(props).sort().join(",")}>
+      <span data-testid={`${name}-label`}>{label}</span>
+      <output data-testid={`${name}-renders`}>{fallbackRenders[name]}</output>
+      <output data-testid={`${name}-failures`}>{failTries}</output>
+      <button onClick={onAction}>Действие</button>
+    </section>
+  );
+});
+
+const fallbackProbeConfigs: DynamicModuleConfig[] = ['loading', 'error', 'placeholder'].map((name) => ({
+  id: remoteId, name, publicPath: `/fixtures/${remoteId}`, enabled: name !== 'placeholder', componentName: name === 'error' ? 'MissingDefault' : undefined,
+}));
+
+function FallbackContextStand() {
+  const [parentRender, setParentRender] = useState(0);
+  const [label, setLabel] = useState('Первое значение');
+  const [handlerVersion, setHandlerVersion] = useState(0);
+  const [lastAction, setLastAction] = useState('');
+  const onAction = useCallback(() => setLastAction(String(handlerVersion)), [handlerVersion]);
+  return (
+    <main>
+      <button onClick={() => setParentRender((value) => value + 1)}>Ререндер родителя</button>
+      <output data-testid="parent-render">{parentRender}</output>
+      <button onClick={() => setLabel('Новое значение')}>Изменить контекст</button>
+      <button onClick={() => setHandlerVersion((value) => value + 1)}>Изменить обработчик</button>
+      <output data-testid="last-action">{lastAction}</output>
+      {fallbackProbeConfigs.map((config) => (
+        <DynamicModule<ProbeContext>
+          key={config.name}
+          config={config}
+          context={{ label, onAction }}
+          fallbacks={{ loading: FallbackProbe, error: FallbackProbe, placeholder: FallbackProbe }}
+        />
+      ))}
+    </main>
+  );
+}
+
 function Stand() {
   const { enabled = true, ...options }: Scenario = cases[scenario];
   const [mount, setMount] = useState(0);
@@ -150,12 +195,12 @@ function Stand() {
   ];
   const activeTab = tabs.find((item) => item.componentName === tab)!;
   const config = { supportUrl: '#support', id: remoteId, enabled, publicPath, ...options };
-  const props: Omit<StandProps, 'children'> = {
+  const props: StandProps = {
     config,
     fallbacks: {
       error: scenario === 'slow-error' ? (props) => <SlowError {...props} /> : ErrorFallback,
-      loading: scenario === 'silent' ? undefined : ({ name }) => <p role="status">Загружаю {name}…</p>,
-      placeholder: scenario === 'slow-placeholder' ? <SlowPlaceholder {...config} /> : Placeholder,
+      loading: scenario === 'silent' ? undefined : ({ config }) => <p role="status">Загружаю {config.name}…</p>,
+      placeholder: scenario === 'slow-placeholder' ? <SlowPlaceholder config={config} /> : Placeholder,
     },
     onLoad: scenario === 'rerender' ? undefined : ({ status }) => {
       setEvents((previous) => [...previous, status]);
@@ -236,4 +281,4 @@ function Stand() {
 }
 
 const root = document.getElementById('root');
-if (root) createRoot(root).render(<Stand />);
+if (root) createRoot(root).render(scenario === 'fallback-context' ? <FallbackContextStand /> : <Stand />);

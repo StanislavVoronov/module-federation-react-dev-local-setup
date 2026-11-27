@@ -28,15 +28,10 @@ const UserInfo = () => <p>User info</p>;
 // @ts-expect-error Unexpected context property.
 <DynamicModule<{ userId: string }> {...props} context={{ userId: '42', extra: true }} />;
 
-<DynamicModule<WidgetContext> {...props}>
-  {(Module) => <Module initialCount={2} onChange={() => {}} />}
-</DynamicModule>;
-<DynamicModule<WidgetContext> {...props}>
-  {/* @ts-expect-error Required props remain checked in custom rendering. */}
-  {(Module) => <Module />}
-</DynamicModule>;
-// @ts-expect-error Choose context or children, not both.
-<DynamicModule<WidgetContext> {...props} context={{ initialCount: 2, onChange: () => {} }} children={() => null} />;
+// @ts-expect-error Render functions are no longer supported.
+<DynamicModule<WidgetContext> {...props} children={() => null} />;
+// @ts-expect-error JSX children are no longer supported.
+<DynamicModule {...props}><span>Child</span></DynamicModule>;
 
 // @ts-expect-error Error fallback is required.
 <DynamicModule config={config} />;
@@ -46,7 +41,7 @@ const UserInfo = () => <p>User info</p>;
 <DynamicModule {...props} fallbacks={{ error: undefined }} />;
 
 function ContextualUserInfo({ module }: { module: DynamicModuleFallbackContext }) {
-  return <p>{module.name}</p>;
+  return <p>{module.config.name}</p>;
 }
 function ErrorModal({ error, onRepeat, failTries, isLoading }: {
   error: unknown; onRepeat: () => void; failTries: number; isLoading: boolean;
@@ -56,8 +51,8 @@ function ErrorModal({ error, onRepeat, failTries, isLoading }: {
 <DynamicModule {...props} fallbacks={{ error: ErrorModal, loading: UserInfo, placeholder: <UserInfo /> }} />;
 <DynamicModule {...props} fallbacks={{
   placeholder: (context) => <ContextualUserInfo module={context} />,
-  loading: ({ name }) => <p>{name}</p>,
-  error: ({ name, error, onRepeat }) => <button onClick={onRepeat}>{name}: {String(error)}</button>,
+  loading: ({ config }) => <p>{config.name}</p>,
+  error: ({ config, error, onRepeat }) => <button onClick={onRepeat}>{config.name}: {String(error)}</button>,
 }} />;
 <DynamicModule {...props} config={{ ...config, componentName: './Widget', manifest: 'mf-manifest.json', supportUrl: '/help' }} />;
 // @ts-expect-error supportTitle is not supported.
@@ -95,3 +90,23 @@ const profileContext: ProfileContext = { userId: '42', onClose: () => {} };
 <DynamicModule {...props} context={{}} />;
 // @ts-expect-error A handler-only context requires an explicit generic.
 <DynamicModule {...props} context={{ onClose: () => {} }} />;
+
+<DynamicModule<ProfileContext> {...props} context={profileContext} fallbacks={{
+  loading: ({ userId, onClose }) => <button onClick={onClose}>{userId?.toUpperCase()}</button>,
+  placeholder: ({ userId }) => <p>{userId}</p>,
+  error: ({ userId, error, onClose, onRepeat }) => <button onClick={onClose ?? onRepeat}>{userId}: {String(error)}</button>,
+}} />;
+<DynamicModule<ProfileContext> {...props} fallbacks={{ error: null, loading: ({ userId }) => {
+  // @ts-expect-error context is optional, so userId may be absent in a fallback.
+  return userId.toUpperCase();
+} }} />;
+
+<DynamicModule<ProfileContext> {...props} context={profileContext} fallbacks={{
+  loading: ({ config, userId }) => <p>{config.name}: {userId}</p>,
+  error: ({ config, error }) => <p>{config.name}: {String(error)}</p>,
+  placeholder: (fallbackProps) => {
+    // @ts-expect-error Configuration fields must not be flattened into fallback props.
+    void fallbackProps.publicPath;
+    return <p>{fallbackProps.config.publicPath}</p>;
+  },
+}} />;
