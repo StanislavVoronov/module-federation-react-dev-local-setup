@@ -35,7 +35,7 @@ type LoadResult = { status: 'success' } | { status: 'error'; error: unknown };
 
 type BaseProps = DynamicModuleFallbackContext & {
   /** Reports the outcome of a fresh load attempt. */
-  onLoad?: (result: LoadResult) => void;
+  onLoad?: (result: LoadResult) => void | Promise<void>;
   fallbacks: {
     error: Exclude<Fallback<ErrorFallbackContext>, undefined>;
     placeholder?: Fallback<DynamicModuleFallbackContext>;
@@ -55,8 +55,10 @@ const host = {
   name: import.meta.env.PUBLIC_FRONT_MODULE_NAME,
 };
 
+const registeredPublicPaths = new Map<string, string>();
+
 const DEFAULT_MANIFEST = 'importmap.json';
-const moduleCache = new Map<string, { default: ModuleComponent }>();
+const moduleCache = new Map<string, { default: ModuleComponent; request?: Promise<RemoteModule> }>();
 
 function renderFallback<T extends object>(Fallback: Fallback<T>, context: T): ReactNode {
   return typeof Fallback === 'function' ? <Fallback {...context} /> : Fallback ?? null;
@@ -67,7 +69,19 @@ function getModuleId({ id, componentName }: Pick<BaseProps, 'id' | 'componentNam
   return !expose || expose === '.' ? id : `${id}/${expose}`;
 }
 
-async function fetchRemoteComponent({
+function getCacheKey(props: Pick<BaseProps, 'id' | 'componentName' | 'publicPath'>): string {
+  return `${props.publicPath}/${getModuleId(props)}`;
+}
+
+async function notifyLoad(onLoad: BaseProps['onLoad'], result: LoadResult): Promise<void> {
+  try {
+    await onLoad?.(result);
+  } catch (error) {
+    console.error('Ошибка в onLoad DynamicModule', error);
+  }
+}
+
+function fetchRemoteComponent({
   id,
   publicPath,
   manifest = DEFAULT_MANIFEST,
@@ -77,53 +91,61 @@ async function fetchRemoteComponent({
 }: Pick<BaseProps, 'id' | 'publicPath' | 'manifest' | 'componentName' | 'onLoad'> & { force?: boolean }): Promise<RemoteModule> {
   const moduleId = getModuleId({ id, componentName });
 
-  try {
-    const params = new URLSearchParams({ hostId: host.id, remoteId: id });
-    const manifestPath = `${publicPath}/${manifest}`;
-    const entry = `${manifestPath}?${params}`;
-    registerRemotes([{ name: id, entry }], { force });
-  } catch (cause) {
-    const error = new Error(`Не удалось зарегистрировать ${id}: ${String(cause)}`, { cause });
-    onLoad?.({ status: 'error', error });
+  const cached = moduleCache.get(getCacheKey({ id, componentName, publicPath }));
+  if (cached?.request) return cached.request;
 
-    throw error;
-  }
+  const request = Promise.resolve().then(async () => {
+    try {
+      const params = new URLSearchParams({ hostId: host.id, remoteId: id });
+      const manifestPath = `${publicPath}/${manifest}`;
+      const entry = `${manifestPath}?${params}`;
+      const previousPath = registeredPublicPaths.get(id);
+      registerRemotes([{ name: id, entry }], {
+        force: force || (previousPath !== undefined && previousPath !== publicPath),
+      });
+      registeredPublicPaths.set(id, publicPath);
+    } catch (cause) {
+      const error = new Error(`Не удалось зарегистрировать ${id}: ${String(cause)}`, { cause });
+      void notifyLoad(onLoad, { status: 'error', error });
 
-  try {
-    const loaded = await loadRemote<RemoteModule>(moduleId);
+      throw error;
+    }
 
-    if (!loaded?.default) throw new Error('default export не найден');
+    try {
+      const loaded = await loadRemote<RemoteModule>(moduleId);
 
-    onLoad?.({ status: 'success' });
+      if (!loaded?.default) throw new Error('default export не найден');
 
-    return loaded;
-  } catch (cause) {
-    const error = new Error(`Не удалось загрузить ${moduleId}: ${String(cause)}`, { cause });
+      void notifyLoad(onLoad, { status: 'success' });
 
-    onLoad?.({ status: 'error', error });
+      return loaded;
+    } catch (cause) {
+      const error = new Error(`Не удалось загрузить ${moduleId}: ${String(cause)}`, { cause });
 
-    throw error;
-  }
+      void notifyLoad(onLoad, { status: 'error', error });
+
+      throw error;
+    }
+  }).finally(() => {
+    if (cached) delete cached.request;
+  });
+
+  if (cached) cached.request = request;
+  return request;
 }
 
 function loadModule(props: BoundaryProps) {
-  const moduleId = getModuleId(props);
+  const cacheKey = getCacheKey(props);
 
-  const cached = moduleCache.get(moduleId);
+  const cached = moduleCache.get(cacheKey);
 
   if (cached) {
     return cached.default;
   }
 
-  const Component = lazy(async () => {
-    const request = await fetchRemoteComponent(props);
+  const Component = lazy(() => fetchRemoteComponent(props));
 
-    moduleCache.set(moduleId, request);
-
-    return request;
-  });
-
-  moduleCache.set(moduleId, { default: Component });
+  moduleCache.set(cacheKey, { default: Component });
   return Component;
 }
 
@@ -150,7 +172,7 @@ export function DynamicModule<T extends RemoteComponent>({
 
   return (
     <RemoteBoundary
-      key={getModuleId(module)}
+      key={getCacheKey(module)}
       {...module}
       onLoad={onLoad}
       fallbacks={fallbacks}
@@ -188,15 +210,15 @@ export class RemoteBoundary extends Component<BoundaryProps, BoundaryState> {
     console.error(`${host.name}: не удалось загрузить ${name}`, error, info);
   }
 
-  onRepeat = async () => {
-    this.setState({ isLoading: true });
+  onRepeat = async (): Promise<void> => {
+    if (this.state.isLoading) return;
 
-    const moduleId = getModuleId(this.props);
-    moduleCache.delete(moduleId);
+    this.setState({ isLoading: true });
+    const cacheKey = getCacheKey(this.props);
 
     try {
       const loaded = await fetchRemoteComponent({ ...this.props, force: true });
-      moduleCache.set(moduleId, loaded);
+      moduleCache.set(cacheKey, loaded);
       this.setState({ error: null, isLoading: false });
     } catch (error) {
       this.setState(({ failTries }) => ({

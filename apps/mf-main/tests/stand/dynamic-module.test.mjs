@@ -418,3 +418,30 @@ test('ререндер родителя сохраняет состояние з
   assert.equal(requests.length, count);
   assert.deepEqual(await events(), []);
 });
+
+test('ошибка onLoad не скрывает успешно загруженный модуль', async () => {
+  await open('onload-error');
+  await page.getByLabel('Текст заметки').fill('Модуль работает');
+  assert.equal(await page.getByRole('alert').count(), 0);
+  assert.deepEqual(await events(), ['success']);
+});
+
+test('смена publicPath запрашивает новый манифест и сбрасывает прежнюю ошибку', async () => {
+  const manifests = [];
+  page.on('request', (request) => {
+    if (request.url().includes('importmap.json?')) manifests.push(new URL(request.url()).pathname);
+  });
+  await page.route('**/fixtures/unavailable/importmap.json?*', (route) => route.fulfill({ status: 503, body: 'Unavailable' }));
+  await open('public-path');
+  await page.getByLabel('Текст заметки').waitFor();
+  await page.getByRole('button', { name: 'Другой адрес', exact: true }).click();
+  await page.getByLabel('Текст заметки').waitFor();
+  assert.ok(manifests.includes('/fixtures/stand_notes_alt/importmap.json'));
+  assert.deepEqual(await events(), ['success', 'success']);
+  await page.getByRole('button', { name: 'Недоступный адрес', exact: true }).click();
+  await page.getByRole('alert').waitFor();
+  await page.getByRole('button', { name: 'Исходный адрес', exact: true }).click();
+  await page.getByLabel('Текст заметки').fill('Снова работает');
+  assert.equal(await page.getByRole('alert').count(), 0);
+  assert.deepEqual(await events(), ['success', 'success', 'error']);
+});

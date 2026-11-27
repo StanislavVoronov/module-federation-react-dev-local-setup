@@ -13,6 +13,8 @@ const cases = {
   tabs: { name: 'Пять модулей во вкладках' },
   default: { name: 'Root expose и кеш' },
   rerender: { name: 'Сохранение состояния при ререндере' },
+  'public-path': { name: 'Смена publicPath' },
+  'onload-error': { name: 'Ошибка обработчика onLoad' },
   named: { name: 'Named expose и children', manifest: 'custom-manifest.json', componentName: './Widget' },
   disabled: { name: 'Выключенный remote', enabled: false },
   'slow-placeholder': { name: 'Медленный placeholder', enabled: false },
@@ -130,6 +132,7 @@ const SlowError = lazy(async () => {
 function Stand() {
   const { enabled = true, ...options }: Scenario = cases[scenario];
   const [mount, setMount] = useState(0);
+  const [publicPath, setPublicPath] = useState(`/fixtures/${remoteId}`);
   const [renderCount, setRenderCount] = useState(0);
   const [events, setEvents] = useState<EventStatus[]>([]);
   const [tab, setTab] = useState('Widget');
@@ -145,7 +148,7 @@ function Stand() {
     { id: 'stand_placeholder', componentName: 'Placeholder', name: 'Placeholder' },
   ];
   const activeTab = tabs.find((item) => item.componentName === tab)!;
-  const config = { supportUrl: '#support', id: remoteId, enabled, publicPath: `/fixtures/${remoteId}`, ...options };
+  const config = { supportUrl: '#support', id: remoteId, enabled, publicPath, ...options };
   const props: Omit<StandProps, 'children'> = {
     ...config,
     fallbacks: {
@@ -153,7 +156,10 @@ function Stand() {
       loading: scenario === 'silent' ? undefined : ({ name }) => <p role="status">Загружаю {name}…</p>,
       placeholder: scenario === 'slow-placeholder' ? <SlowPlaceholder {...config} /> : Placeholder,
     },
-    onLoad: scenario === 'rerender' ? undefined : ({ status }) => setEvents((previous) => [...previous, status]),
+    onLoad: scenario === 'rerender' ? undefined : ({ status }) => {
+      setEvents((previous) => [...previous, status]);
+      if (scenario === 'onload-error') throw new Error('Ошибка обработчика onLoad');
+    },
   };
 
   return (
@@ -161,6 +167,13 @@ function Stand() {
       <h1>Стенд DynamicModule</h1>
       <div className="host__nav">
         <button type="button" onClick={() => setMount((value) => value + 1)}>Перемонтировать модуль</button>
+        {scenario === 'public-path' && (
+          <>
+            <button onClick={() => setPublicPath('/fixtures/stand_notes_alt')}>Другой адрес</button>
+            <button onClick={() => setPublicPath('/fixtures/unavailable')}>Недоступный адрес</button>
+            <button onClick={() => setPublicPath(`/fixtures/${remoteId}`)}>Исходный адрес</button>
+          </>
+        )}
         {scenario === 'rerender' && (
           <button type="button" onClick={() => setRenderCount((value) => value + 1)}>Обновить родителя ({renderCount})</button>
         )}

@@ -39,9 +39,11 @@ export default defineConfig({
 
         server.middlewares.use((req, res, next) => {
           const url = new URL(req.url ?? '/', 'http://localhost');
-          if (!url.pathname.startsWith(remoteBase)) return next();
+          const alternateBase = '/fixtures/stand_notes_alt/';
+          const requestBase = id === 'stand_notes' && url.pathname.startsWith(alternateBase) ? alternateBase : remoteBase;
+          if (!url.pathname.startsWith(requestBase)) return next();
 
-          const file = url.pathname.slice(remoteBase.length);
+          const file = url.pathname.slice(requestBase.length);
           if (file === 'importmap.json' || file === 'custom-manifest.json') {
             if (url.searchParams.get('hostId') !== 'dynamic_module_test' || url.searchParams.get('remoteId') !== id) {
               res.statusCode = 400;

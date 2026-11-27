@@ -10,7 +10,7 @@
     "build": "turbo run build",
     "build:dev": "turbo run build:dev",
     "dev:dynamic-module": "rsbuild dev --root apps/mf-main --config tests/stand/rsbuild.config.mjs",
-    "test:dynamic-module": "node --test apps/mf-main/tests/stand/dynamic-module.test.mjs"
+    "test:dynamic-module": "node --test apps/mf-main/tests/DynamicModule.loading.test.cjs apps/mf-main/tests/stand/dynamic-module.test.mjs"
   },
   "dependencies": {
     "@module-federation/enhanced": "^2.8.2",
