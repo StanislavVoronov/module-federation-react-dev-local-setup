@@ -31,7 +31,7 @@ type ErrorFallbackContext<T = unknown> = Omit<DynamicModuleFallbackContext<T>, '
   failTries: number;
   isLoading: boolean;
 };
-type Fallback<T extends object> = ReactNode | ((context: T) => ReactNode) | ExoticComponent<T>;
+type Fallback<T extends Record<string, unknown>> = ReactNode | ((context: T) => ReactNode) | ExoticComponent<T>;
 type LoadResult = { status: 'success' } | { status: 'error'; error: unknown };
 
 type BaseProps<T = unknown> = DynamicModuleConfig & {
@@ -61,9 +61,10 @@ const host = {
 const registeredPublicPaths = new Map<string, string>();
 
 const DEFAULT_MANIFEST = 'importmap.json';
+const EMPTY_CONTEXT: Record<string, unknown> = {};
 const moduleCache = new Map<string, { default: ModuleComponent; request?: Promise<RemoteModule> }>();
 
-function renderFallback<T extends object>(Fallback: Fallback<T>, context: T): ReactNode {
+function renderFallback<T extends Record<string, unknown>>(Fallback: Fallback<T>, context: T): ReactNode {
   if (typeof Fallback === 'function' || (
     Fallback && typeof Fallback === 'object' && '$$typeof' in Fallback &&
     (Fallback.$$typeof === Symbol.for('react.memo') || Fallback.$$typeof === Symbol.for('react.lazy') || Fallback.$$typeof === Symbol.for('react.forward_ref'))
@@ -165,8 +166,9 @@ export function DynamicModule<T = unknown>({
   fallbacks,
   onLoad,
 }: DynamicModuleProps<T>): ReactNode {
+  const moduleContext = (context ?? EMPTY_CONTEXT) as Record<string, unknown>;
   if (!config.enabled) {
-    const fallbackContext = { ...context as object, config } as DynamicModuleFallbackContext<T>;
+    const fallbackContext = { ...moduleContext, config } as DynamicModuleFallbackContext<T>;
     return (
       <Suspense fallback={renderFallback(fallbacks.loading, fallbackContext)}>
         {renderFallback(fallbacks.placeholder, fallbackContext)}
@@ -236,7 +238,8 @@ export class RemoteBoundary<T = unknown> extends Component<BoundaryProps<T>, Bou
   render() {
     const { error, failTries, isLoading } = this.state;
     const { fallbacks, onLoad, context, config } = this.props;
-    const fallbackContext = { ...context as object, config } as DynamicModuleFallbackContext<T>;
+    const moduleContext = (context ?? EMPTY_CONTEXT) as Record<string, unknown>;
+    const fallbackContext = { ...moduleContext, config } as DynamicModuleFallbackContext<T>;
     const loading = renderFallback(fallbacks.loading, fallbackContext);
 
     if (error !== null) {
@@ -257,7 +260,7 @@ export class RemoteBoundary<T = unknown> extends Component<BoundaryProps<T>, Bou
 
     return (
       <Suspense fallback={loading}>
-        <Module {...context as object} />
+        <Module {...moduleContext} />
       </Suspense>
     );
   }
