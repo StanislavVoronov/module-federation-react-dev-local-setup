@@ -14,10 +14,10 @@ const UserInfo = () => <p>User info</p>;
 <DynamicModule<WidgetContext> {...props} context={{ initialCount: 2, onChange: (count) => count.toFixed() }} />;
 <DynamicModule<{ title?: string }> {...props} />;
 <DynamicModule<{ title?: string }> {...props} context={{ title: 'Title' }} />;
-// Context may also be inferred.
+// @ts-expect-error Passing context requires an explicit generic.
 <DynamicModule {...props} context={{ userId: '42', onClose: () => {} }} />;
 
-// @ts-expect-error Required context cannot be omitted.
+// Context is optional even when a generic has required fields.
 <DynamicModule<WidgetContext> {...props} />;
 // @ts-expect-error Required handler is missing.
 <DynamicModule<WidgetContext> {...props} context={{ initialCount: 2 }} />;
@@ -73,3 +73,25 @@ function ErrorModal({ error, onRepeat, failTries, isLoading }: {
     void result.module;
   }
 }} />;
+
+const unknownContext: unknown = { userId: '42' };
+// @ts-expect-error An unknown value must not bypass the explicit generic requirement.
+<DynamicModule {...props} context={unknownContext} />;
+<DynamicModule<unknown> {...props} />;
+<DynamicModule<WidgetContext> {...props} context={undefined} />;
+
+interface ProfileContext {
+  userId: string;
+  onClose: () => void;
+}
+const profileContext: ProfileContext = { userId: '42', onClose: () => {} };
+<DynamicModule<ProfileContext> {...props} context={profileContext} />;
+<DynamicModule<ProfileContext> {...props} />;
+// @ts-expect-error A typed variable must not infer the generic automatically.
+<DynamicModule {...props} context={profileContext} />;
+// @ts-expect-error Spreading props must not infer the generic automatically.
+<DynamicModule {...props} {...{ context: profileContext }} />;
+// @ts-expect-error Even an empty context requires an explicit generic.
+<DynamicModule {...props} context={{}} />;
+// @ts-expect-error A handler-only context requires an explicit generic.
+<DynamicModule {...props} context={{ onClose: () => {} }} />;

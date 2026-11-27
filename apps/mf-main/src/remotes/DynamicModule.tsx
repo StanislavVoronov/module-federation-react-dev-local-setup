@@ -42,10 +42,10 @@ type BaseProps = DynamicModuleFallbackContext & {
   };
 };
 
-export type DynamicModuleProps<T extends object = Record<string, never>> =
+export type DynamicModuleProps<T = unknown> =
   Pick<BaseProps, 'fallbacks' | 'onLoad'> & { config: DynamicModuleConfig } & (
-    | ({ children?: never } & ({} extends T ? { context?: T } : { context: T }))
-    | { children: (Module: ComponentType<T>) => ReactNode; context?: never }
+    | { children?: never; context?: unknown extends T ? never : NoInfer<T> }
+    | { children: (Module: ComponentType<NoInfer<T>>) => ReactNode; context?: never }
   );
 
 type ModuleComponent = ComponentType | LazyExoticComponent<ComponentType>;
@@ -150,7 +150,7 @@ function loadModule(props: BoundaryProps) {
   return Component;
 }
 
-export function DynamicModule<T extends object = Record<string, never>>({
+export function DynamicModule<T = unknown>({
   config,
   context,
   fallbacks,
@@ -172,10 +172,9 @@ export function DynamicModule<T extends object = Record<string, never>>({
       onLoad={onLoad}
       fallbacks={fallbacks}
     >
-      {(Module) => {
-        const Remote = Module as ComponentType<T>;
-        return typeof children === 'function' ? children(Remote) : <Remote {...context as T} />;
-      }}
+      {(Module) => typeof children === 'function'
+        ? children(Module as ComponentType<T>)
+        : <Module {...context as object} />}
     </RemoteBoundary>
   );
 }
