@@ -50,8 +50,6 @@ export type DynamicModuleProps<T = unknown> = BaseProps<NoInfer<T>> & {
 type ModuleComponent = ComponentType | LazyExoticComponent<ComponentType>;
 type RemoteModule = { default: ComponentType };
 
-const registeredPublicPaths = new Map<string, string>();
-
 const DEFAULT_MANIFEST = 'importmap.json';
 const EMPTY_CONTEXT: Record<string, unknown> = {};
 const moduleCache = new Map<string, { default: ModuleComponent; request?: Promise<RemoteModule> }>();
@@ -122,16 +120,12 @@ function fetchRemoteComponent({
     try {
       const snapshot = generateSnapshotFromManifest(remoteManifest, { version: manifestUrl });
       const entry = getResourceUrl(snapshot, snapshot.remoteEntry);
-      const previousPath = registeredPublicPaths.get(remoteManifest.name);
       registerRemotes([{
         name: remoteManifest.name,
         entry,
         type: snapshot.remoteEntryType,
         entryGlobalName: snapshot.globalName,
-      }], {
-        force: force || (previousPath !== undefined && previousPath !== publicPath),
-      });
-      registeredPublicPaths.set(remoteManifest.name, publicPath);
+      }], { force });
     } catch (cause) {
       const error = new Error(`Не удалось зарегистрировать ${remoteManifest.name}: ${String(cause)}`, { cause });
       void notifyLoad(onLoad, { status: 'error', error });

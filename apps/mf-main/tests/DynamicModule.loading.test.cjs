@@ -69,6 +69,7 @@ for (const fail of [false, true]) {
     await first.instance.onRepeat();
     await flush();
     assert.equal(fixture.registrations(), 1);
+    assert.equal(fixture.registered[0].options.force, true);
     assert.equal(fixture.pending.length, 1);
     if (fail) fixture.pending[0].reject(new Error('network failure'));
     else fixture.pending[0].resolve({ default: () => null });
@@ -125,7 +126,7 @@ for (const asynchronous of [false, true]) {
   }
 }
 
-test('publicPath change creates separate components and registers the new address', async () => {
+test('publicPath change creates separate components and requests registration without force', async () => {
   const fixture = setup();
   const props = { host: { id: 'test', name: 'Test' }, publicPath: '/first', enabled: true, fallbacks: { error: null } };
   const first = fixture.loadModule(props);
@@ -138,7 +139,7 @@ test('publicPath change creates separate components and registers the new addres
   const next = fixture.fetchRemoteComponent(nextProps);
   await flush();
   assert.equal(fixture.pending.length, 2);
-  assert.equal(fixture.registered[1].options.force, true);
+  assert.equal(fixture.registered[1].options.force, false);
   assert.equal(fixture.registered[1].remotes[0].entry, '/second/remoteEntry.js');
   fixture.pending[1].resolve({ default: () => null });
   await next;
