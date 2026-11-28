@@ -1,4 +1,6 @@
 import { loadRemote, registerRemotes } from '@module-federation/enhanced/runtime';
+import { generateSnapshotFromManifest, getResourceUrl } from '@module-federation/sdk';
+import type { Manifest } from '@module-federation/sdk';
 import { Component, lazy, Suspense } from 'react';
 import type {
   ComponentType,
@@ -8,23 +10,18 @@ import type {
   ReactNode,
 } from 'react';
 
-export type DynamicModuleSource = {
-  /** Federation container name. */
-  id: string;
-  name: string;
-  hostId: string;
-  hostName: string;
+type ModuleOptions = {
+  host: { id: string; name: string };
   enabled?: boolean;
-  /** Manifest file relative to the remote path. Defaults to `importmap.json`. */
+  /** Manifest file relative to publicPath. Defaults to `importmap.json`. */
   manifest?: string;
   /** Public base path without a query, for example `/mf-remote-1`. */
   publicPath: string;
   /** Key in `exposes`. Omit to load the root expose. */
-  componentName?: string;
+  component?: string;
 };
 
-export type DynamicModuleFallbackContext<T = unknown> =
-  { source: DynamicModuleSource } & Omit<Partial<T>, 'source'>;
+export type DynamicModuleFallbackContext<T = unknown> = Partial<T>;
 
 type ErrorFallbackContext<T = unknown> = Omit<DynamicModuleFallbackContext<T>, 'error' | 'onRepeat' | 'failTries' | 'isLoading'> & {
   error: unknown;
@@ -35,7 +32,7 @@ type ErrorFallbackContext<T = unknown> = Omit<DynamicModuleFallbackContext<T>, '
 type Fallback<T extends Record<string, unknown>> = ReactNode | ((context: T) => ReactNode) | ExoticComponent<T>;
 type LoadResult = { status: 'success' } | { status: 'error'; error: unknown };
 
-type BaseProps<T = unknown> = DynamicModuleSource & {
+type BaseProps<T = unknown> = ModuleOptions & {
   /** Reports the outcome of a fresh load attempt. */
   onLoad?: (result: LoadResult) => void | Promise<void>;
   fallbacks: {
@@ -45,9 +42,8 @@ type BaseProps<T = unknown> = DynamicModuleSource & {
   };
 };
 
-export type DynamicModuleProps<T = unknown> = Pick<BaseProps<NoInfer<T>>, 'fallbacks' | 'onLoad'> & {
+export type DynamicModuleProps<T = unknown> = BaseProps<NoInfer<T>> & {
   children?: never;
-  source: DynamicModuleSource;
   context?: unknown extends T ? never : NoInfer<T>;
 };
 
@@ -71,13 +67,13 @@ function renderFallback<T extends Record<string, unknown>>(Fallback: Fallback<T>
   return (Fallback as ReactNode) ?? null;
 }
 
-function getModuleId({ id, componentName }: Pick<BaseProps, 'id' | 'componentName'>): string {
-  const expose = componentName?.replace(/^\.\//, '');
-  return !expose || expose === '.' ? id : `${id}/${expose}`;
+function getModuleId(name: string, component?: string): string {
+  const expose = component?.replace(/^\.\//, '');
+  return !expose || expose === '.' ? name : `${name}/${expose}`;
 }
 
-function getCacheKey(props: Pick<BaseProps, 'id' | 'componentName' | 'publicPath'>): string {
-  return `${props.publicPath}/${getModuleId(props)}`;
+function getCacheKey({ publicPath, component }: Pick<ModuleOptions, 'component' | 'publicPath'>): string {
+  return getModuleId(publicPath, component);
 }
 
 async function notifyLoad(onLoad: BaseProps['onLoad'], result: LoadResult): Promise<void> {
@@ -88,49 +84,68 @@ async function notifyLoad(onLoad: BaseProps['onLoad'], result: LoadResult): Prom
   }
 }
 
-type LoadOptions = { source: DynamicModuleSource } & Pick<BaseProps, 'onLoad'>;
+type LoadOptions = ModuleOptions & Pick<BaseProps, 'onLoad'>;
 
 function fetchRemoteComponent({
-  source,
+  host,
+  publicPath,
+  component,
+  manifest = DEFAULT_MANIFEST,
   onLoad,
   force = false,
 }: LoadOptions & { force?: boolean }): Promise<RemoteModule> {
-  const { hostId, id, publicPath, manifest = DEFAULT_MANIFEST } = source;
-  const moduleId = getModuleId(source);
-
-  const cached = moduleCache.get(getCacheKey(source));
+  const cached = moduleCache.get(getCacheKey({ publicPath, component }));
   if (cached?.request) return cached.request;
 
   const request = Promise.resolve().then(async () => {
+    const params = new URLSearchParams({ hostId: host.id });
+    const manifestUrl = `${publicPath}/${manifest}?${params}`;
+    let remoteManifest: Manifest;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(new Error('Таймаут загрузки манифеста: 30 секунд')), 30_000);
     try {
-      const params = new URLSearchParams({ hostId, remoteId: id });
-      const manifestPath = `${publicPath}/${manifest}`;
-      const entry = `${manifestPath}?${params}`;
-      const previousPath = registeredPublicPaths.get(id);
-      registerRemotes([{ name: id, entry }], {
+      const response = await fetch(manifestUrl, { signal: controller.signal });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      remoteManifest = await response.json();
+      if (!remoteManifest?.id || !remoteManifest.name) {
+        throw new Error('manifest.id и manifest.name должны быть заданы');
+      }
+    } catch (cause) {
+      const error = new Error(`Не удалось загрузить манифест ${manifestUrl}: ${String(cause)}`, { cause });
+      void notifyLoad(onLoad, { status: 'error', error });
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    const moduleId = getModuleId(remoteManifest.name, component);
+    try {
+      const snapshot = generateSnapshotFromManifest(remoteManifest, { version: manifestUrl });
+      const entry = getResourceUrl(snapshot, snapshot.remoteEntry);
+      const previousPath = registeredPublicPaths.get(remoteManifest.name);
+      registerRemotes([{
+        name: remoteManifest.name,
+        entry,
+        type: snapshot.remoteEntryType,
+        entryGlobalName: snapshot.globalName,
+      }], {
         force: force || (previousPath !== undefined && previousPath !== publicPath),
       });
-      registeredPublicPaths.set(id, publicPath);
+      registeredPublicPaths.set(remoteManifest.name, publicPath);
     } catch (cause) {
-      const error = new Error(`Не удалось зарегистрировать ${id}: ${String(cause)}`, { cause });
+      const error = new Error(`Не удалось зарегистрировать ${remoteManifest.name}: ${String(cause)}`, { cause });
       void notifyLoad(onLoad, { status: 'error', error });
-
       throw error;
     }
 
     try {
       const loaded = await loadRemote<RemoteModule>(moduleId);
-
       if (!loaded?.default) throw new Error('default export не найден');
-
       void notifyLoad(onLoad, { status: 'success' });
-
       return loaded;
     } catch (cause) {
       const error = new Error(`Не удалось загрузить ${moduleId}: ${String(cause)}`, { cause });
-
       void notifyLoad(onLoad, { status: 'error', error });
-
       throw error;
     }
   }).finally(() => {
@@ -141,30 +156,24 @@ function fetchRemoteComponent({
   return request;
 }
 
-function loadModule({ source, onLoad }: LoadOptions) {
-  const cacheKey = getCacheKey(source);
-
+function loadModule(options: LoadOptions) {
+  const cacheKey = getCacheKey(options);
   const cached = moduleCache.get(cacheKey);
+  if (cached) return cached.default;
 
-  if (cached) {
-    return cached.default;
-  }
-
-  const Component = lazy(() => fetchRemoteComponent({ source, onLoad }));
-
+  const Component = lazy(() => fetchRemoteComponent(options));
   moduleCache.set(cacheKey, { default: Component });
   return Component;
 }
 
 export function DynamicModule<T = unknown>({
-  source,
   context,
   fallbacks,
-  onLoad,
+  ...options
 }: DynamicModuleProps<T>): ReactNode {
   const moduleContext = (context ?? EMPTY_CONTEXT) as Record<string, unknown>;
-  if (source.enabled === false) {
-    const fallbackContext = { ...moduleContext, source } as DynamicModuleFallbackContext<T>;
+  if (options.enabled === false) {
+    const fallbackContext = moduleContext as DynamicModuleFallbackContext<T>;
     return (
       <Suspense fallback={renderFallback(fallbacks.loading, fallbackContext)}>
         {renderFallback(fallbacks.placeholder, fallbackContext)}
@@ -174,17 +183,15 @@ export function DynamicModule<T = unknown>({
 
   return (
     <RemoteBoundary<T>
-      key={getCacheKey(source)}
-      source={source}
+      key={getCacheKey(options)}
+      {...options}
       context={context}
-      onLoad={onLoad}
       fallbacks={fallbacks}
     />
   );
 }
 
-type BoundaryProps<T = unknown> = Pick<BaseProps<T>, 'fallbacks' | 'onLoad'> & {
-  source: DynamicModuleSource;
+type BoundaryProps<T = unknown> = BaseProps<T> & {
   context?: T;
 };
 
@@ -208,18 +215,18 @@ export class RemoteBoundary<T = unknown> extends Component<BoundaryProps<T>, Bou
   componentDidCatch(error: unknown, info: ErrorInfo) {
     this.setState(({ failTries }) => ({ failTries: failTries + 1 }));
 
-    const { hostName, name } = this.props.source;
-    console.error(`${hostName}: не удалось загрузить ${name}`, error, info);
+    const { host, publicPath } = this.props;
+    console.error(`${host.name}: не удалось загрузить ${publicPath}`, error, info);
   }
 
   onRepeat = async (): Promise<void> => {
     if (this.state.isLoading) return;
 
     this.setState({ isLoading: true });
-    const cacheKey = getCacheKey(this.props.source);
+    const cacheKey = getCacheKey(this.props);
 
     try {
-      const loaded = await fetchRemoteComponent({ source: this.props.source, onLoad: this.props.onLoad, force: true });
+      const loaded = await fetchRemoteComponent({ ...this.props, force: true });
       moduleCache.set(cacheKey, loaded);
       this.setState({ error: null, isLoading: false });
     } catch (error) {
@@ -233,9 +240,9 @@ export class RemoteBoundary<T = unknown> extends Component<BoundaryProps<T>, Bou
 
   render() {
     const { error, failTries, isLoading } = this.state;
-    const { fallbacks, onLoad, context, source } = this.props;
+    const { fallbacks, context } = this.props;
     const moduleContext = (context ?? EMPTY_CONTEXT) as Record<string, unknown>;
-    const fallbackContext = { ...moduleContext, source } as DynamicModuleFallbackContext<T>;
+    const fallbackContext = moduleContext as DynamicModuleFallbackContext<T>;
     const loading = renderFallback(fallbacks.loading, fallbackContext);
 
     if (error !== null) {
@@ -252,7 +259,7 @@ export class RemoteBoundary<T = unknown> extends Component<BoundaryProps<T>, Bou
       );
     }
 
-    const Module = loadModule({ source, onLoad });
+    const Module = loadModule(this.props);
 
     return (
       <Suspense fallback={loading}>
@@ -263,12 +270,11 @@ export class RemoteBoundary<T = unknown> extends Component<BoundaryProps<T>, Bou
 }
 
 export function DefaultRemoteError({
-  source: { name },
   error,
-}: { source: DynamicModuleSource; error: unknown }) {
+}: { error: unknown }) {
   return (
     <div className="host__error">
-      <strong>{name} недоступен.</strong>
+      <strong>Модуль недоступен.</strong>
       <pre>{error instanceof Error ? error.message : String(error)}</pre>
     </div>
   );

@@ -3,7 +3,17 @@ const { readFileSync } = require('node:fs');
 const { test } = require('node:test');
 const ts = require('typescript');
 
-function setup() {
+function manifest(name = 'remote') {
+  return {
+    id: name,
+    name,
+    metaData: { globalName: name, publicPath: 'auto', remoteEntry: { path: '', name: 'remoteEntry.js', type: 'global' }, buildInfo: { buildVersion: '1' } },
+    exposes: [], shared: [], remotes: [],
+  };
+}
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+function setup(options = {}) {
   const source = readFileSync(`${__dirname}/../src/remotes/DynamicModule.tsx`, 'utf8')
     .replaceAll('import.meta.env.PUBLIC_FRONT_MODULE_ID', "'test'")
     .replaceAll('import.meta.env.PUBLIC_FRONT_MODULE_NAME', "'Test'")
@@ -14,16 +24,29 @@ function setup() {
   const pending = [];
   let registrations = 0;
   const registered = [];
+  const requests = [];
+  const loads = [];
+  const timers = new Set();
   const runtime = {
-    registerRemotes(remotes, options) { registrations++; registered.push({ remotes, options }); },
-    loadRemote() { return new Promise((resolve, reject) => pending.push({ resolve, reject })); },
+    registerRemotes(remotes, options) { registrations++; registered.push({ remotes, options }); if (setupOptions.registerError) throw setupOptions.registerError; },
+    loadRemote(id) { loads.push(id); return new Promise((resolve, reject) => pending.push({ resolve, reject })); },
   };
+  const setupOptions = options;
   const exports = {};
-  new Function('require', 'exports', code)((id) => id === '@module-federation/enhanced/runtime' ? runtime : require(id), exports);
+  const fetch = async (url, init) => {
+    requests.push({ url, ...init });
+    if (options.fetch) return options.fetch(url, init);
+    return { ok: true, json: async () => options.manifest ?? manifest() };
+  };
+  const setTimer = (callback, delay) => { const timer = { callback, delay }; timers.add(timer); return timer; };
+  new Function('require', 'exports', 'fetch', 'setTimeout', 'clearTimeout', code)(
+    (id) => id === '@module-federation/enhanced/runtime' ? runtime : require(id), exports, fetch,
+    setTimer, (timer) => timers.delete(timer),
+  );
   function boundary(id = 'remote') {
-    const props = { hostId: 'test', hostName: 'Test', id: id, name: id, publicPath: `/${id}`, enabled: true, fallbacks: { error: null } };
-    exports.loadModule({ source: props });
-    const instance = new exports.RemoteBoundary({ source: props, fallbacks: props.fallbacks });
+    const props = { host: { id: 'test', name: 'Test' }, publicPath: `/${id}`, enabled: true, fallbacks: { error: null } };
+    exports.loadModule(props);
+    const instance = new exports.RemoteBoundary(props);
     instance.state.error = new Error('initial failure');
     // Apply queued state updates explicitly to simulate a committed React update.
     const updates = [];
@@ -32,7 +55,7 @@ function setup() {
       for (const update of updates.splice(0)) Object.assign(instance.state, typeof update === 'function' ? update(instance.state) : update);
     } };
   }
-  return { boundary, pending, registered, ...exports, registrations: () => registrations };
+  return { boundary, pending, registered, requests, loads, timers, ...exports, registrations: () => registrations };
 }
 
 for (const fail of [false, true]) {
@@ -44,7 +67,7 @@ for (const fail of [false, true]) {
     first.flush();
     assert.equal(first.instance.state.isLoading, true);
     await first.instance.onRepeat();
-    await Promise.resolve();
+    await flush();
     assert.equal(fixture.registrations(), 1);
     assert.equal(fixture.pending.length, 1);
     if (fail) fixture.pending[0].reject(new Error('network failure'));
@@ -57,7 +80,7 @@ for (const fail of [false, true]) {
       assert.equal(item.instance.state.error === null, !fail);
     }
     const next = first.instance.onRepeat();
-    await Promise.resolve();
+    await flush();
     assert.equal(fixture.pending.length, 2);
     fixture.pending[1].resolve({ default: () => null });
     await next;
@@ -69,7 +92,7 @@ test('different modules load independently', async () => {
   const first = fixture.boundary('first');
   const second = fixture.boundary('second');
   const attempts = [first.instance.onRepeat(), second.instance.onRepeat()];
-  await Promise.resolve();
+  await flush();
   assert.equal(fixture.pending.length, 2);
   fixture.pending.forEach((request) => request.resolve({ default: () => null }));
   await Promise.all(attempts);
@@ -85,10 +108,10 @@ for (const asynchronous of [false, true]) {
         if (asynchronous) return Promise.reject(new Error('callback failure'));
         throw new Error('callback failure');
       };
-      const props = { hostId: 'test', hostName: 'Test', id: 'remote', name: 'Remote', publicPath: '/remote', onLoad: callback };
-      fixture.loadModule({ source: props, onLoad: props.onLoad });
-      const request = fixture.fetchRemoteComponent({ source: props, onLoad: props.onLoad });
-      await Promise.resolve();
+      const props = { host: { id: 'test', name: 'Test' }, publicPath: '/remote', onLoad: callback };
+      fixture.loadModule(props);
+      const request = fixture.fetchRemoteComponent(props);
+      await flush();
       if (fail) {
         fixture.pending[0].reject(new Error('network failure'));
         await assert.rejects(request, /network failure/);
@@ -104,35 +127,115 @@ for (const asynchronous of [false, true]) {
 
 test('publicPath change creates separate components and registers the new address', async () => {
   const fixture = setup();
-  const props = { hostId: 'test', hostName: 'Test', id: 'remote', name: 'Remote', publicPath: '/first', enabled: true, fallbacks: { error: null } };
-  const first = fixture.loadModule({ source: props, onLoad: props.onLoad });
-  const initial = fixture.fetchRemoteComponent({ source: props, onLoad: props.onLoad });
-  await Promise.resolve();
+  const props = { host: { id: 'test', name: 'Test' }, publicPath: '/first', enabled: true, fallbacks: { error: null } };
+  const first = fixture.loadModule(props);
+  const initial = fixture.fetchRemoteComponent(props);
+  await flush();
   const nextProps = { ...props, publicPath: '/second' };
-  const second = fixture.loadModule({ source: nextProps });
+  const second = fixture.loadModule(nextProps);
   assert.notEqual(first, second);
-  assert.equal(fixture.loadModule({ source: { ...nextProps, manifest: 'another.json' } }), second);
-  const next = fixture.fetchRemoteComponent({ source: nextProps });
-  await Promise.resolve();
+  assert.equal(fixture.loadModule({ ...nextProps, manifest: 'another.json' }), second);
+  const next = fixture.fetchRemoteComponent(nextProps);
+  await flush();
   assert.equal(fixture.pending.length, 2);
   assert.equal(fixture.registered[1].options.force, true);
-  assert.equal(fixture.registered[1].remotes[0].entry, '/second/importmap.json?hostId=test&remoteId=remote');
+  assert.equal(fixture.registered[1].remotes[0].entry, '/second/remoteEntry.js');
   fixture.pending[1].resolve({ default: () => null });
   await next;
   fixture.pending[0].resolve({ default: () => null });
   await initial;
-  assert.equal(fixture.loadModule({ source: nextProps }), second);
-  assert.equal(fixture.loadModule({ source: props, onLoad: props.onLoad }), first);
+  assert.equal(fixture.loadModule(nextProps), second);
+  assert.equal(fixture.loadModule(props), first);
 });
 
-test('manifest URL uses hostId and id from source', async () => {
-  const fixture = setup();
-  const source = { hostId: 'another_host', hostName: 'Host label', id: 'another_remote', name: 'Remote label', enabled: true, publicPath: '/module' };
-  fixture.loadModule({ source });
-  const request = fixture.fetchRemoteComponent({ source });
-  await Promise.resolve();
+test('fetches manifest before registration and loads its name with the requested expose', async () => {
+  const fixture = setup({ manifest: manifest('another_remote') });
+  const options = { host: { id: 'another_host', name: 'Host' }, publicPath: '/module', component: './Widget' };
+  fixture.loadModule(options);
+  const request = fixture.fetchRemoteComponent(options);
+  assert.equal(fixture.registrations(), 0);
+  await flush();
+  assert.equal(fixture.requests.length, 1);
+  assert.equal(fixture.requests[0].url, '/module/importmap.json?hostId=another_host');
   assert.equal(fixture.registered[0].remotes[0].name, 'another_remote');
-  assert.equal(fixture.registered[0].remotes[0].entry, '/module/importmap.json?hostId=another_host&remoteId=another_remote');
+  assert.equal(fixture.registered[0].remotes[0].entry, '/module/remoteEntry.js');
+  assert.deepEqual(fixture.loads, ['another_remote/Widget']);
+  assert.equal(fixture.timers.size, 0);
   fixture.pending[0].resolve({ default: () => null });
   await request;
+});
+
+for (const [label, fetch] of [
+  ['HTTP error', async () => ({ ok: false, status: 503 })],
+  ['invalid JSON', async () => ({ ok: true, json: async () => { throw new SyntaxError('Invalid JSON'); } })],
+  ['missing name', async () => ({ ok: true, json: async () => ({ ...manifest(), name: '' }) })],
+  ['missing id', async () => ({ ok: true, json: async () => ({ ...manifest(), id: '' }) })],
+  ['network error', async () => { throw new Error('Offline'); }],
+]) {
+  test(`manifest failure: ${label}`, async () => {
+    const fixture = setup({ fetch });
+    const outcomes = [];
+    const options = { host: { id: 'host', name: 'Host' }, publicPath: '/remote', onLoad: (result) => outcomes.push(result) };
+    fixture.loadModule(options);
+    await assert.rejects(fixture.fetchRemoteComponent(options), /Не удалось загрузить манифест/);
+    assert.equal(fixture.registrations(), 0);
+    assert.equal(fixture.pending.length, 0);
+    assert.equal(fixture.timers.size, 0);
+    assert.equal(outcomes.length, 1);
+    assert.equal(outcomes[0].status, 'error');
+  });
+}
+
+for (const body of [false, true]) {
+  test(`30 second timeout aborts ${body ? 'JSON body' : 'manifest request'} and retry succeeds`, async () => {
+    let fail = true;
+    const fixture = setup({ fetch: async (_url, { signal }) => {
+      if (!fail) return { ok: true, json: async () => manifest() };
+      const wait = () => new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+      return body ? { ok: true, json: wait } : wait();
+    } });
+    const boundary = fixture.boundary();
+    const first = boundary.instance.onRepeat();
+    await flush();
+    const [timer] = fixture.timers;
+    assert.equal(timer.delay, 30_000);
+    timer.callback();
+    await first;
+    boundary.flush();
+    assert.match(boundary.instance.state.error.message, /30 секунд/);
+    assert.equal(boundary.instance.state.failTries, 1);
+    assert.equal(boundary.instance.state.isLoading, false);
+    assert.equal(fixture.requests[0].signal.aborted, true);
+    assert.equal(fixture.registrations(), 0);
+    fail = false;
+    const second = boundary.instance.onRepeat();
+    await flush();
+    fixture.pending[0].resolve({ default: () => null });
+    await second;
+    boundary.flush();
+    assert.equal(boundary.instance.state.error, null);
+    assert.equal(fixture.requests.length, 2);
+    assert.equal(fixture.timers.size, 0);
+  });
+}
+
+test('registration failure is reported separately after manifest fetch', async () => {
+  const fixture = setup({ registerError: new Error('Registration denied') });
+  const boundary = fixture.boundary();
+  await boundary.instance.onRepeat();
+  boundary.flush();
+  assert.match(boundary.instance.state.error.message, /Не удалось зарегистрировать remote/);
+  assert.equal(fixture.requests.length, 1);
+  assert.equal(fixture.loads.length, 0);
+});
+
+test('cache keeps stable components and separates exposes', () => {
+  const fixture = setup();
+  const options = { host: { id: 'host', name: 'Host' }, publicPath: '/remote' };
+  const root = fixture.loadModule(options);
+  assert.equal(fixture.loadModule({ ...options, component: '.' }), root);
+  const named = fixture.loadModule({ ...options, component: './Widget' });
+  assert.notEqual(named, root);
+  assert.equal(fixture.loadModule({ ...options, component: 'Widget' }), named);
+  assert.equal(fixture.requests.length, 0);
 });

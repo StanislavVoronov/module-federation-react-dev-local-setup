@@ -1,13 +1,7 @@
 import { DynamicModule, type DynamicModuleFallbackContext } from '../src/remotes/DynamicModule';
 
-const source = {
-  hostId: 'mf_main',
-  hostName: 'mf-main',
-  id: 'mf_remote_1',
-  name: 'mf-remote-1',
-  publicPath: '/mf-remote-1',
-};
-const props = { source, fallbacks: { error: null } };
+const options = { host: { id: 'mf_main', name: 'mf-main' }, publicPath: '/mf-remote-1' };
+const props = { ...options, fallbacks: { error: null } };
 type WidgetContext = { initialCount: number; onChange: (count: number) => void };
 const UserInfo = () => <p>User info</p>;
 
@@ -35,14 +29,14 @@ const UserInfo = () => <p>User info</p>;
 <DynamicModule {...props}><span>Child</span></DynamicModule>;
 
 // @ts-expect-error Error fallback is required.
-<DynamicModule source={source} />;
+<DynamicModule {...options} />;
 // @ts-expect-error Loading does not replace error fallback.
 <DynamicModule {...props} fallbacks={{ loading: UserInfo }} />;
 // @ts-expect-error Use null to hide error content.
 <DynamicModule {...props} fallbacks={{ error: undefined }} />;
 
 function ContextualUserInfo({ module }: { module: DynamicModuleFallbackContext }) {
-  return <p>{module.source.name}</p>;
+  return <p>{'User info'}</p>;
 }
 function ErrorModal({ error, onRepeat, failTries, isLoading }: {
   error: unknown; onRepeat: () => void; failTries: number; isLoading: boolean;
@@ -52,16 +46,19 @@ function ErrorModal({ error, onRepeat, failTries, isLoading }: {
 <DynamicModule {...props} fallbacks={{ error: ErrorModal, loading: UserInfo, placeholder: <UserInfo /> }} />;
 <DynamicModule {...props} fallbacks={{
   placeholder: (context) => <ContextualUserInfo module={context} />,
-  loading: ({ source }) => <p>{source.name}</p>,
-  error: ({ source, error, onRepeat }) => <button onClick={onRepeat}>{source.name}: {String(error)}</button>,
+  loading: () => <p>Загрузка</p>,
+  error: ({ error, onRepeat }) => <button onClick={onRepeat}>{String(error)}</button>,
 }} />;
-<DynamicModule {...props} source={{ ...source, componentName: './Widget', manifest: 'mf-manifest.json' }} />;
-// @ts-expect-error supportTitle is not supported.
-<DynamicModule {...props} source={{ ...source, supportTitle: 'Help' }} />;
-// @ts-expect-error Config fields are no longer top-level props.
-<DynamicModule {...props} publicPath="/other" />;
-// @ts-expect-error Host identity comes from the build environment.
-<DynamicModule {...props} host={{ id: 'custom', name: 'Custom' }} />;
+<DynamicModule {...props} component="./Widget" manifest="mf-manifest.json" />;
+<DynamicModule {...props} enabled={false} />;
+// @ts-expect-error source is no longer supported.
+<DynamicModule {...props} source={options} />;
+// @ts-expect-error Remote identity comes from the manifest.
+<DynamicModule {...props} id="remote" />;
+// @ts-expect-error Remote display name is no longer supported.
+<DynamicModule {...props} name="Remote" />;
+// @ts-expect-error Host id is required.
+<DynamicModule {...props} host={{ name: 'Host' }} />;
 
 <DynamicModule {...props} onLoad={(result) => {
   if (result.status === 'success') {
@@ -103,16 +100,14 @@ const profileContext: ProfileContext = { userId: '42', onClose: () => {} };
 } }} />;
 
 <DynamicModule<ProfileContext> {...props} context={profileContext} fallbacks={{
-  loading: ({ source, userId }) => <p>{source.name}: {userId}</p>,
-  error: ({ source, error }) => <p>{source.name}: {String(error)}</p>,
+  loading: ({ userId }) => <p>{userId}</p>,
+  error: ({ error }) => <p>{String(error)}</p>,
   placeholder: (fallbackProps) => {
     // @ts-expect-error Configuration fields must not be flattened into fallback props.
     void fallbackProps.publicPath;
-    return <p>{fallbackProps.source.publicPath}</p>;
+    return <p>{fallbackProps.userId}</p>;
   },
 }} />;
 
-// @ts-expect-error Support fields are no longer part of source.
-<DynamicModule {...props} source={{ ...source, supportUrl: '/help' }} />;
-// @ts-expect-error Source must specify hostId.
-<DynamicModule {...props} source={{ id: 'remote', name: 'Remote', hostName: 'Host', enabled: true, publicPath: '/remote' }} />;
+// @ts-expect-error Support fields are not supported.
+<DynamicModule {...props} supportUrl="/help" />;

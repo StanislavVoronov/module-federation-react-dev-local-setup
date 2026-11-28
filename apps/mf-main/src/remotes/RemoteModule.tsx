@@ -23,16 +23,10 @@ export function RemoteModule({ remote }: { remote: RemoteDescriptor }) {
   return (
     <DynamicModule
       fallbacks={{ error: DefaultRemoteError }}
-      source={{
-        hostId: import.meta.env.PUBLIC_FRONT_MODULE_ID,
-        hostName: import.meta.env.PUBLIC_FRONT_MODULE_NAME,
-        id: remote.name,
-        name: remote.title ?? `${remote.name}/${remote.module}`,
-        enabled: true,
-        publicPath: remote.path,
-        manifest: remote.manifest,
-        componentName: remote.module,
-      }}
+      host={{ id: import.meta.env.PUBLIC_FRONT_MODULE_ID, name: import.meta.env.PUBLIC_FRONT_MODULE_NAME }}
+      publicPath={remote.path}
+      manifest={remote.manifest}
+      component={remote.module}
     />
   );
 }

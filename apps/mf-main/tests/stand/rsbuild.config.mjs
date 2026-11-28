@@ -45,9 +45,9 @@ export default defineConfig({
 
           const file = url.pathname.slice(requestBase.length);
           if (file === 'importmap.json' || file === 'custom-manifest.json') {
-            if (url.searchParams.get('hostId') !== 'dynamic_module_test' || url.searchParams.get('remoteId') !== id) {
+            if (url.searchParams.get('hostId') !== 'dynamic_module_test') {
               res.statusCode = 400;
-              res.end('Expected hostId and remoteId in the manifest URL');
+              res.end('Expected hostId in the manifest URL');
               return;
             }
             req.url = `${remoteBase}importmap.json${url.search}`;

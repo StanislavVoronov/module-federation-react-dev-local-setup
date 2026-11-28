@@ -106,28 +106,27 @@ dev-серверы и от режима `mf-main` не зависят. А вот
 
 ## Конфигурация DynamicModule
 
-Компонент принимает `source`, `context`, `fallbacks` и необязательный `onLoad`.
-В `source` входят `hostId`, `hostName`, `id`, `name`, `publicPath`, `enabled?`, `manifest?`, `componentName?`. Без `enabled` модуль включён; без `componentName` загружается корневой expose.
-Поля поддержки удалены. Fallback-компоненты получают поля `context` через spread и отдельный prop `source` без разворачивания. `source`, `error`, `onRepeat`, `failTries`, `isLoading` задаёт DynamicModule. Поля пользовательского контекста в типах fallback необязательны, поскольку сам `context` можно не передавать.
+Компонент принимает `host={{ id, name }}`, `publicPath`, `component?`, `enabled?`, `manifest?`, `context?`, `fallbacks` и `onLoad?`. Без `enabled` модуль включён; без `component` загружается корневой expose. Идентификатор и имя remote не передаются.
 
-Generic описывает данные и обработчики `context`, передаваемые модулю через spread:
+Сначала DynamicModule самостоятельно запрашивает `${publicPath}/${manifest}?hostId=…` (по умолчанию `manifest` — `importmap.json`). Таймаут получения ответа и чтения JSON — 30 секунд; при таймауте запрос отменяется. Затем контейнер регистрируется по `manifest.name`, а адрес JS entry, его тип и глобальное имя берутся из метаданных манифеста средствами Module Federation SDK. Runtime загружает entry и expose без повторного запроса манифеста. Ошибки манифеста, регистрации и загрузки обрабатываются отдельно. Повтор заново загружает манифест.
 
 ```tsx
 <DynamicModule<{ userId: string; onClose: () => void }>
-  source={{ hostId: 'main', hostName: 'Приложение', id: 'profile', name: 'Профиль', enabled: true, publicPath: '/profile' }}
+  host={{ id: 'main', name: 'Приложение' }}
+  publicPath="/profile"
+  component="UserInfo"
   context={{ userId: '42', onClose: handleClose }}
   fallbacks={{ error: DefaultRemoteError }}
 />
 ```
 
-`context` всегда необязателен. Для передачи любого значения в `context` требуется явный generic интерфейса; автоматическое выведение типа отключено. Без generic (тип по умолчанию — `unknown`) `context` передавать нельзя.
-`children` не поддерживается. Модуль всегда рендерится через `<Module {...context} />`.
-`context` — обычные props модуля, а не React Context. Он не хранится в общем кеше: каждый экземпляр получает собственные актуальные данные и обработчики.
-DynamicModule не оборачивает компоненты в `React.memo`. Если fallback сам использует `React.memo`, новый объект `context` с теми же значениями полей не вызывает дополнительный ререндер при стабильной ссылке на `source`. Новые ссылки на вложенные объекты или обработчики считаются изменением props.
+`context` всегда необязателен. Для передачи значения в `context` требуется явный generic интерфейса; автоматическое выведение типа отключено. Без generic (тип по умолчанию — `unknown`) `context` передавать нельзя. `children` не поддерживается.
 
-DynamicModule получает host из `source.hostId` и `source.hostName`. Вызывающие компоненты mf-main заполняют их из `import.meta.env.PUBLIC_FRONT_MODULE_ID` и `import.meta.env.PUBLIC_FRONT_MODULE_NAME`. Для сборки mf-main значения
-по умолчанию — `mf_main` и `mf-main`; их можно изменить переменными окружения.
-Стенд задаёт собственные значения: `dynamic_module_test` и `Стенд`.
+Модуль и fallback-компоненты получают поля `context` через spread. Error fallback дополнительно получает `error`, `onRepeat`, `failTries`, `isLoading`. Служебные поля имеют приоритет над одноимёнными полями контекста. Конфигурация загрузки в props модуля и fallback не добавляется. `fallbacks.error` обязателен, остальные fallback по умолчанию — `null`.
+
+`context` — обычные props модуля, а не React Context. Он не хранится в общем кеше: каждый экземпляр получает собственные актуальные данные и обработчики. DynamicModule не оборачивает компоненты в `React.memo`; при необходимости его добавляет владелец модуля или fallback. Ключ кеша включает `publicPath` и `component`; смена `publicPath` запускает загрузку по новому адресу.
+
+Вызывающие компоненты mf-main заполняют `host` из `import.meta.env.PUBLIC_FRONT_MODULE_ID` и `PUBLIC_FRONT_MODULE_NAME`. Значения по умолчанию — `mf_main` и `mf-main`. Стенд задаёт `dynamic_module_test` и `Стенд`.
 
 ## Стенд DynamicModule
 
@@ -135,7 +134,7 @@ DynamicModule получает host из `source.hostId` и `source.hostName`. �
 npm run dev:dynamic-module
 ```
 
-Откройте <http://127.0.0.1:7010>. Каждая вкладка собирается отдельным компилятором Rsbuild с Module Federation: `stand_notes`, `stand_counter`, `stand_tasks`, `stand_calculator`, `stand_preferences` и `stand_placeholder`. При первом открытии вкладки в Network видны её `importmap.json?hostId=…&remoteId=…`, `remoteEntry.js` и JS-чанк под `/fixtures/<id>/`. У задач задержка 2 секунды, калькулятора — 3, настроек — 4. Повторный переход использует кеш без loading. Placeholder не делает запросов до нажатия «Включить модуль».
+Откройте <http://127.0.0.1:7010>. Каждая вкладка собирается отдельным компилятором Rsbuild с Module Federation: `stand_notes`, `stand_counter`, `stand_tasks`, `stand_calculator`, `stand_preferences` и `stand_placeholder`. При первом открытии вкладки в Network видны её `importmap.json?hostId=…`, `remoteEntry.js` и JS-чанк под `/fixtures/<id>/`. У задач задержка 2 секунды, калькулятора — 3, настроек — 4. Повторный переход использует кеш без loading. Placeholder не делает запросов до нажатия «Включить модуль».
 
 Дополнительные сценарии доступны через `?case=default`, `?case=retry`, `?case=retry-delayed`, `?case=slow`.
 

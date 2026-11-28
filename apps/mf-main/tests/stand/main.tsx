@@ -3,10 +3,10 @@ import * as React from 'react';
 import { lazy, memo, useCallback, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { DynamicModule } from '../../src/remotes/DynamicModule';
-import type { DynamicModuleSource, DynamicModuleFallbackContext, DynamicModuleProps } from '../../src/remotes/DynamicModule';
+import type { DynamicModuleFallbackContext, DynamicModuleProps } from '../../src/remotes/DynamicModule';
 import '../../src/index.css';
 
-type Scenario = Omit<DynamicModuleSource, 'hostId' | 'hostName' | 'id' | 'publicPath' | 'enabled'> & { enabled?: boolean };
+type Scenario = Pick<DynamicModuleProps, 'enabled' | 'component' | 'manifest'> & { name: string };
 
 const cases = {
   tabs: { name: 'Пять модулей во вкладках' },
@@ -16,18 +16,18 @@ const cases = {
   'onload-error': { name: 'Ошибка обработчика onLoad' },
   'fallback-context': { name: 'Контекст fallback-компонентов' },
   context: { name: 'Контекст и обработчики' },
-  named: { name: 'Named expose и context', manifest: 'custom-manifest.json', componentName: './Widget' },
+  named: { name: 'Named expose и context', manifest: 'custom-manifest.json', component: './Widget' },
   disabled: { name: 'Выключенный remote', enabled: false },
   'slow-placeholder': { name: 'Медленный placeholder', enabled: false },
   slow: { name: 'Медленный remote' },
   silent: { name: 'Без loading' },
   register: { name: 'Ошибка регистрации' },
   'slow-error': { name: 'Медленный error fallback' },
-  missing: { name: 'Нет default export', componentName: './MissingDefault' },
+  missing: { name: 'Нет default export', component: './MissingDefault' },
   retry: { name: 'Ошибка загрузки и повтор' },
   'retry-delayed': { name: 'Ошибка → повтор → успех через 5 секунд' },
-  'render-error': { name: 'Ошибка рендера', componentName: './BrokenNote' },
-  preset: { name: 'Готовый компонент', componentName: './Widget' },
+  'render-error': { name: 'Ошибка рендера', component: './BrokenNote' },
+  preset: { name: 'Готовый компонент', component: './Widget' },
 } satisfies Record<string, Scenario>;
 
 type Case = keyof typeof cases;
@@ -96,7 +96,7 @@ init({
   }],
 });
 
-function Placeholder({ source: { name } }: DynamicModuleFallbackContext) {
+function Placeholder({ name }: { name: string }) {
   return <p>{name} выключен</p>;
 }
 
@@ -105,7 +105,6 @@ function ErrorFallback({ error, failTries, isLoading, onRepeat }: {
   failTries: number;
   isLoading: boolean;
   onRepeat: () => void;
-  source: DynamicModuleSource;
 }) {
   return (
     <div className="host__error" role="alert">
@@ -129,10 +128,10 @@ const SlowError = lazy(async () => {
   return { default: ErrorFallback };
 });
 
-type ProbeContext = { label: string; onAction: () => void };
+type ProbeContext = { kind: string; label: string; onAction: () => void };
 const fallbackRenders: Record<string, number> = {};
 const FallbackProbe = memo(function FallbackProbe(props: DynamicModuleFallbackContext<ProbeContext> & { failTries?: number }) {
-  const { source: { name }, label, onAction, failTries } = props;
+  const { kind: name = 'loading', label, onAction, failTries } = props;
   fallbackRenders[name] = (fallbackRenders[name] ?? 0) + 1;
   return (
     <section aria-label={name} data-props={Object.keys(props).sort().join(",")}>
@@ -144,8 +143,8 @@ const FallbackProbe = memo(function FallbackProbe(props: DynamicModuleFallbackCo
   );
 });
 
-const fallbackProbeSources: DynamicModuleSource[] = ['loading', 'error', 'placeholder'].map((name) => ({
-  hostId: host.id, hostName: host.name, id, name, publicPath: `/fixtures/${id}`, enabled: name !== 'placeholder', componentName: name === 'error' ? 'MissingDefault' : undefined,
+const fallbackProbeOptions: Pick<DynamicModuleProps, 'host' | 'publicPath' | 'enabled' | 'component'>[] = ['loading', 'error', 'placeholder'].map((name) => ({
+  host, publicPath: `/fixtures/${id}`, enabled: name !== 'placeholder', component: name === 'error' ? 'MissingDefault' : undefined,
 }));
 
 function FallbackContextStand() {
@@ -161,11 +160,11 @@ function FallbackContextStand() {
       <button onClick={() => setLabel('Новое значение')}>Изменить контекст</button>
       <button onClick={() => setHandlerVersion((value) => value + 1)}>Изменить обработчик</button>
       <output data-testid="last-action">{lastAction}</output>
-      {fallbackProbeSources.map((source) => (
+      {fallbackProbeOptions.map((options, index) => (
         <DynamicModule<ProbeContext>
-          key={source.name}
-          source={source}
-          context={{ label, onAction }}
+          key={index}
+          {...options}
+          context={{ kind: ['loading', 'error', 'placeholder'][index], label, onAction }}
           fallbacks={{ loading: FallbackProbe, error: FallbackProbe, placeholder: FallbackProbe }}
         />
       ))}
@@ -174,7 +173,7 @@ function FallbackContextStand() {
 }
 
 function Stand() {
-  const { enabled = true, ...options }: Scenario = cases[scenario];
+  const { enabled = true, name, ...options }: Scenario = cases[scenario];
   const [mount, setMount] = useState(0);
   const [publicPath, setPublicPath] = useState(`/fixtures/${id}`);
   const [renderCount, setRenderCount] = useState(0);
@@ -183,23 +182,23 @@ function Stand() {
   const [tab, setTab] = useState('Widget');
   const [placeholderEnabled, setPlaceholderEnabled] = useState(false);
   const tabs = [
-    { id: 'stand_notes', componentName: 'Widget', name: 'Заметка' },
-    { id: 'stand_counter', componentName: 'Counter', name: 'Счётчик' },
-    { id: 'stand_tasks', componentName: 'Tasks', name: 'Задачи' },
-    { id: 'stand_calculator', componentName: 'Calculator', name: 'Калькулятор' },
-    { id: 'stand_preferences', componentName: 'Preferences', name: 'Настройки' },
-    { id: 'stand_registration_error', componentName: 'RegistrationError', name: 'Ошибка регистрации' },
-    { id: 'stand_load_error', componentName: 'LoadError', name: 'Ошибка загрузки remote' },
-    { id: 'stand_placeholder', componentName: 'Placeholder', name: 'Placeholder' },
+    { id: 'stand_notes', component: 'Widget', name: 'Заметка' },
+    { id: 'stand_counter', component: 'Counter', name: 'Счётчик' },
+    { id: 'stand_tasks', component: 'Tasks', name: 'Задачи' },
+    { id: 'stand_calculator', component: 'Calculator', name: 'Калькулятор' },
+    { id: 'stand_preferences', component: 'Preferences', name: 'Настройки' },
+    { id: 'stand_registration_error', component: 'RegistrationError', name: 'Ошибка регистрации' },
+    { id: 'stand_load_error', component: 'LoadError', name: 'Ошибка загрузки remote' },
+    { id: 'stand_placeholder', component: 'Placeholder', name: 'Placeholder' },
   ];
-  const activeTab = tabs.find((item) => item.componentName === tab)!;
-  const source = { hostId: host.id, hostName: host.name, id, enabled, publicPath, ...options };
+  const activeTab = tabs.find((item) => item.component === tab)!;
+  const moduleOptions = { host, enabled, publicPath, ...options };
   const props: StandProps = {
-    source,
+    ...moduleOptions,
     fallbacks: {
       error: scenario === 'slow-error' ? (props) => <SlowError {...props} /> : ErrorFallback,
-      loading: scenario === 'silent' ? undefined : ({ source }) => <p role="status">Загружаю {source.name}…</p>,
-      placeholder: scenario === 'slow-placeholder' ? <SlowPlaceholder source={source} /> : Placeholder,
+      loading: scenario === 'silent' ? undefined : () => <p role="status">Загружаю {name}…</p>,
+      placeholder: scenario === 'slow-placeholder' ? <SlowPlaceholder name={name} /> : <Placeholder name={name} />,
     },
     onLoad: scenario === 'rerender' ? undefined : ({ status }) => {
       setEvents((previous) => [...previous, status]);
@@ -236,9 +235,9 @@ function Stand() {
       {scenario === 'tabs' && (
         <div className="host__nav" role="tablist" aria-label="Модули">
           {tabs.map((item) => (
-            <button key={item.componentName} role="tab" id={`tab-${item.componentName}`} aria-controls="module-panel" aria-selected={tab === item.componentName}
-              className={`host__nav-link${tab === item.componentName ? ' host__nav-link--active' : ''}`}
-              onClick={() => setTab(item.componentName)}>{item.name}</button>
+            <button key={item.component} role="tab" id={`tab-${item.component}`} aria-controls="module-panel" aria-selected={tab === item.component}
+              className={`host__nav-link${tab === item.component ? ' host__nav-link--active' : ''}`}
+              onClick={() => setTab(item.component)}>{item.name}</button>
           ))}
         </div>
       )}
@@ -251,7 +250,10 @@ function Stand() {
               </button></p>
             )}
             <DynamicModule key={mount} {...props}
-              source={{ ...source, ...activeTab, publicPath: `/fixtures/${activeTab.id}`, enabled: tab !== 'Placeholder' || placeholderEnabled }}
+              component={activeTab.component}
+              publicPath={`/fixtures/${activeTab.id}`}
+              enabled={tab !== 'Placeholder' || placeholderEnabled}
+              fallbacks={{ ...props.fallbacks, placeholder: <Placeholder name={activeTab.name} /> }}
             />
           </div>
         ) : scenario === 'context' ? (

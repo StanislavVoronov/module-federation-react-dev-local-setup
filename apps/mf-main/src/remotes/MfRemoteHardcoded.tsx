@@ -3,16 +3,10 @@ import { DefaultRemoteError, DynamicModule } from './DynamicModule';
 export function MfRemoteHardcoded() {
   return (
     <DynamicModule
-      source={{
-        hostId: import.meta.env.PUBLIC_FRONT_MODULE_ID,
-        hostName: import.meta.env.PUBLIC_FRONT_MODULE_NAME,
-        id: 'mf_remote',
-        name: 'test',
-        enabled: true,
-        publicPath: '/mf-remote',
-        manifest: 'mf-manifest.json',
-        componentName: 'App',
-      }}
+      host={{ id: import.meta.env.PUBLIC_FRONT_MODULE_ID, name: import.meta.env.PUBLIC_FRONT_MODULE_NAME }}
+      publicPath="/mf-remote"
+      manifest="mf-manifest.json"
+      component="App"
       fallbacks={{
         error: DefaultRemoteError,
         loading: <p className="host__status">Загружаю test…</p>,

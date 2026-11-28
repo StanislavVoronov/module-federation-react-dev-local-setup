@@ -57,7 +57,8 @@ test('загружает root expose по importmap.json и использует
   await open('default');
   await page.getByRole('heading', { name: 'Заметка', exact: true }).waitFor();
   assert.deepEqual(await events(), ['success']);
-  assert.ok(requests.includes('/fixtures/stand_notes/importmap.json?hostId=dynamic_module_test&remoteId=stand_notes'));
+  assert.ok(requests.includes('/fixtures/stand_notes/importmap.json?hostId=dynamic_module_test'));
+  assert.equal(requests.filter((url) => url.includes('importmap.json')).length, 1);
   const requestCount = requests.length;
 
   await page.getByRole('button', { name: 'Перемонтировать модуль' }).click();
@@ -287,7 +288,7 @@ test('пять вкладок загружают отдельные MF-конт�
   assert.equal(manifests.length, ids.length);
   for (const id of ids) {
     assert.ok(manifests.some((url) => url.pathname === `/fixtures/${id}/importmap.json`
-      && url.searchParams.get('remoteId') === id
+      && !url.searchParams.has('remoteId')
       && url.searchParams.get('hostId') === 'dynamic_module_test'), id);
     assert.ok(entries.includes(`/fixtures/${id}/remoteEntry.js`), id);
   }
@@ -391,13 +392,13 @@ for (const { tab, id, message } of [
     await alert.getByText(message).waitFor();
     await alert.getByText('Неудачных попыток: 1', { exact: true }).waitFor();
     assert.deepEqual(await events(), ['success', 'error']);
-    assert.deepEqual(manifests, id === 'stand_load_error' ? [200] : []);
+    assert.deepEqual(manifests, [200]);
     assert.deepEqual(scripts, id === 'stand_load_error' ? [503] : []);
     await alert.getByRole('button', { name: 'Повторить', exact: true }).click();
     await page.getByLabel('Текст заметки').fill('Загрузка восстановлена');
     assert.equal(await page.getByRole('alert').count(), 0);
     assert.deepEqual(await events(), ['success', 'error', 'success']);
-    assert.ok(manifests.length >= 1 && manifests.every((status) => status === 200));
+    assert.deepEqual(manifests, [200, 200]);
     assert.deepEqual(scripts, id === 'stand_load_error' ? [503, 200] : [200]);
   });
 }
@@ -478,8 +479,8 @@ test('fallbacks получают context без лишних ререндеро�
     assert.equal(await page.getByTestId(`${name}-label`).textContent(), 'Первое значение');
     const keys = (await page.getByRole('region', { name, exact: true }).getAttribute('data-props')).split(',');
     assert.deepEqual(keys, (name === 'error'
-      ? ['source', 'label', 'onAction', 'error', 'failTries', 'isLoading', 'onRepeat']
-      : ['source', 'label', 'onAction']).sort());
+      ? ['kind', 'label', 'onAction', 'error', 'failTries', 'isLoading', 'onRepeat']
+      : ['kind', 'label', 'onAction']).sort());
   }
   const renders = await Promise.all(names.map((name) => page.getByTestId(`${name}-renders`).textContent()));
   await page.getByRole('button', { name: 'Ререндер родителя', exact: true }).click();
@@ -494,4 +495,27 @@ test('fallbacks получают context без лишних ререндеро�
     await page.getByRole('region', { name, exact: true }).getByRole('button', { name: 'Действие' }).click();
     assert.equal(await page.getByTestId('last-action').textContent(), '1');
   }
+});
+
+
+test('ошибка манифеста не загружает JS и повтор восстанавливает модуль', async () => {
+  let manifests = 0;
+  const scripts = [];
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (url.pathname.startsWith('/fixtures/') && url.pathname.endsWith('.js')) scripts.push(url.pathname);
+  });
+  await page.route('**/fixtures/stand_notes/importmap.json?*', (route) => {
+    manifests++;
+    return manifests === 1 ? route.fulfill({ status: 503, body: 'Unavailable' }) : route.continue();
+  });
+  await open('default');
+  await page.getByRole('alert').getByText(/Не удалось загрузить манифест.*HTTP 503/).waitFor();
+  assert.deepEqual(scripts, []);
+  assert.deepEqual(await events(), ['error']);
+  await page.getByRole('button', { name: 'Повторить', exact: true }).click();
+  await page.getByLabel('Текст заметки').fill('После повтора');
+  assert.equal(manifests, 2);
+  assert.ok(scripts.some((url) => url.endsWith('/remoteEntry.js')));
+  assert.deepEqual(await events(), ['error', 'success']);
 });
